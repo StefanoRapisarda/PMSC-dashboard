@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PM-SC Dashboard — concept demo</title>
+<style>
+  :root{
+    --patient:#264653; --sample:#2a9d8f; --aliquot:#e9c46a; --platform:#457b9d;
+    --operator:#8d99ae; --mtb:#1d3557; --fail:#e76f51; --accent:#2a9d8f; --pending:#b7bcc4;
+    --bg:#f4f6f8; --panel:#fff; --border:#e3e6ea; --ink:#22262c; --muted:#606771;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);
+    background:var(--bg);overflow:hidden}
+  .demobar{background:#fff6e6;border-bottom:1px solid #f0d9a8;color:#8a6d1a;font-size:12px;text-align:center;padding:4px}
+  header.top{display:flex;align-items:center;gap:18px;background:var(--panel);border-bottom:1px solid var(--border);
+    padding:9px 18px}
+  .brand{font-weight:700;font-size:15px}.brand small{font-weight:400;color:var(--muted)}
+  .search{margin-left:auto;display:flex;align-items:center;gap:7px}
+  .search input{font:inherit;font-size:13px;padding:6px 11px;border:1px solid var(--border);border-radius:8px;
+    background:var(--bg);width:230px}
+  .search input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  nav.tabs{display:flex;gap:3px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 12px}
+  nav.tabs button{border:0;background:none;font:inherit;font-weight:600;font-size:13.5px;color:var(--muted);
+    padding:10px 16px;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+  nav.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+  .view{display:none;height:calc(100vh - 92px);overflow:auto}
+  .view.on{display:block}
+
+  /* --- dashboard --- */
+  .dash{padding:20px 24px}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:14px 16px}
+  .kpi .n{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+  .kpi .n small{font-size:15px;color:var(--accent);font-weight:700}
+  .kpi .l{font-size:12px;color:var(--muted);margin-top:3px}
+  .grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:14px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .card h3{margin:0 0 12px;font-size:13px}
+  .fnl .row{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}
+  .fnl .lab{width:96px;color:var(--muted);flex:0 0 auto}
+  .fnl .bar{height:20px;border-radius:5px;background:linear-gradient(90deg,var(--sample),#5bbfae);
+    display:flex;align-items:center;color:#fff;font-size:11px;padding:0 7px;min-width:26px;font-weight:600}
+  .fnl .row:nth-child(n+6) .bar{background:linear-gradient(90deg,var(--platform),#6a9cbb)}
+  .qcb{display:flex;gap:20px;align-items:flex-end;height:150px;padding-top:6px}
+  .qcb .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;justify-content:flex-end}
+  .qcb .stk{width:44px;display:flex;flex-direction:column-reverse;border-radius:5px;overflow:hidden;min-height:6px}
+  .qcb .p{background:var(--sample)}.qcb .f{background:var(--fail)}
+  .qcb .cl{font-size:12px;color:var(--muted);text-align:center}
+  .att{list-style:none;margin:0;padding:0}
+  .att li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;
+    border-bottom:1px dashed var(--border);font-size:13px;cursor:pointer;border-radius:6px}
+  .att li:hover{background:#f5f8f7;padding-left:6px;padding-right:6px}
+  .att li:last-child{border-bottom:0}
+  .att .t{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;flex:0 0 auto}
+  .att .t.stalled{background:#fdece7;color:#b3401f}.att .t.repeat{background:#fff3d6;color:#8a6d1a}
+  .att .t.fail{background:#fdece7;color:#b3401f}.att .t.pending{background:#eef0f2;color:#606771}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+
+  /* --- workflow --- */
+  .wf{padding:22px 24px}
+  .wf h2{margin:0 0 4px;font-size:18px}.wf .sub{color:var(--muted);margin:0 0 18px;font-size:13px}
+  .stages{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:10px}
+  .stg{min-width:118px;flex:0 0 auto;background:var(--panel);border:1px solid var(--border);
+    border-top:3px solid var(--sample);border-radius:10px;padding:11px 12px;position:relative}
+  .stg + .stg{margin-left:26px}
+  .stg + .stg::before{content:"→";position:absolute;left:-21px;top:50%;transform:translateY(-50%);color:#c0c8cf}
+  .stg .sn{font-size:12.5px;font-weight:600;line-height:1.2}
+  .stg .sc{font-size:22px;font-weight:800;margin-top:6px}
+  .stg .sd{font-size:11px;color:var(--muted);margin-top:2px}
+  .stg.lab{border-top-color:var(--platform)}
+  .branchnote{margin-top:20px;max-width:620px;background:#f6f8fa;border:1px solid var(--border);
+    border-left:3px solid var(--accent);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--muted)}
+  .branchnote b{color:var(--ink)}
+
+  /* --- knowledge graph --- */
+  #view-graph.on{display:grid;grid-template-columns:224px 1fr 268px;height:calc(100vh - 92px)}
+  aside{background:var(--panel);overflow:auto;padding:13px 14px}
+  aside.left{border-right:1px solid var(--border)}
+  aside.right{border-left:1px solid var(--border)}
+  .pt{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px}
+  .uc{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+  .uc button{text-align:left;border:1px solid var(--border);background:var(--panel);border-radius:9px;
+    padding:8px 10px;font:inherit;font-size:12.5px;cursor:pointer;line-height:1.3}
+  .uc button .u{font-weight:700;display:block;margin-bottom:1px}
+  .uc button .d{color:var(--muted);font-size:11px}
+  .uc button.on{border-color:var(--accent);background:#eaf6f3}
+  .uc button.on .u{color:var(--accent)}
+  .fg{margin-bottom:12px}
+  .fg .fh{font-size:12px;font-weight:700;margin:0 0 5px;display:flex;align-items:center;gap:7px}
+  .dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+  label.ck{display:flex;align-items:center;gap:7px;padding:2px 0;font-size:12.5px;cursor:pointer}
+  label.ck input{accent-color:var(--accent);margin:0}
+  .graphwrap{position:relative;background:#fbfcfd;overflow:hidden}
+  #gsvg{width:100%;height:100%;display:block;cursor:default}
+  .glegend{position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.9);border:1px solid var(--border);
+    border-radius:9px;padding:8px 11px;font-size:11.5px;color:var(--muted);line-height:1.7}
+  .glegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+  .ghud{position:absolute;right:12px;top:12px;font-size:11.5px;color:var(--muted);text-align:right}
+  .insp .it{font-size:16px;font-weight:800;margin:2px 0 2px}
+  .insp .ik{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--border);font-size:13px}
+  .kv .k{color:var(--muted)}.kv .v{font-weight:600;text-align:right}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+  .badge.pass{background:#e4f4ee;color:#1c7a5b}.badge.fail{background:#fdece7;color:#b3401f}
+  .badge.pending{background:#eef0f2;color:#606771}
+  .chain{margin-top:12px}
+  .chain .step{display:flex;gap:8px;align-items:center;font-size:12px;padding:3px 0}
+  .chain .sys{width:74px;color:var(--muted);flex:0 0 auto;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+  .chain .idv{font-family:ui-monospace,Menlo,monospace;font-weight:600}
+  .acts{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+  .acts button{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;
+    padding:8px 10px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;text-align:left}
+  .acts button.sec{background:#fff;color:var(--accent)}
+  .empty{color:var(--muted);font-size:13px;margin-top:20px;line-height:1.5}
+
+  /* --- provenance --- */
+  .prov{padding:22px 24px}
+  .prov h2{margin:0 0 4px;font-size:18px}.prov .sub{color:var(--muted);margin:0 0 18px;font-size:13px}
+  .tl{display:flex;align-items:stretch;overflow-x:auto;padding-bottom:8px}
+  .tstep{min-width:140px;flex:0 0 auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:9px 11px;position:relative}
+  .tstep + .tstep{margin-left:26px}
+  .tstep + .tstep::before{content:"→";position:absolute;left:-21px;top:50%;transform:translateY(-50%);color:#c0c8cf}
+  .tstep .ts{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .tstep .ti{font-weight:600;margin:3px 0;font-size:13px}.tstep .td{font-size:11.5px;color:var(--muted)}
+  .tstep.fail{border-color:var(--fail)}
+  .branchbox{margin-top:18px;max-width:640px;border:1px dashed var(--fail);border-radius:10px;padding:12px 14px;
+    background:#fef6f3;font-size:13px;color:#8a4a34}
+  .branchbox b{color:var(--fail)}
+</style>
+</head>
+<body>
+  <div class="demobar">◐ CONCEPT DEMO — synthetic PreDDLung data · fully self-contained · everything below is clickable</div>
+  <header class="top">
+    <div class="brand">PM-SC Dashboard <small>· PreDDLung showcase</small></div>
+    <div class="search">
+      <input id="q" placeholder="Paste any ID — e.g. S03, PMSC-0003, K-2347…" autocomplete="off">
+    </div>
+  </header>
+  <nav class="tabs">
+    <button data-v="dash" class="on">Study dashboard</button>
+    <button data-v="workflow">Sample workflow</button>
+    <button data-v="graph">Knowledge graph</button>
+    <button data-v="prov">Sample provenance</button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <section class="view on" id="view-dash">
+    <div class="dash">
+      <div class="kpis" id="kpis"></div>
+      <div class="grid2">
+        <div class="card"><h3>Pipeline funnel — specimens (n=<span id="fnl-n"></span>)</h3><div id="funnel"></div></div>
+        <div class="card"><h3>QC pass / fail by sample type</h3><div class="qcb" id="qcbars"></div></div>
+      </div>
+      <div class="grid2" style="margin-top:14px">
+        <div class="card"><h3>Needs attention — stalled · failed · repeated</h3>
+          <ul class="att" id="attention"></ul>
+          <p class="hint">Click any row → opens it in the knowledge graph with its provenance traced.</p></div>
+        <div class="card"><h3>What these numbers drive</h3>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 10px">The three decisions the tool exists to support:</p>
+          <p style="font-size:13px;margin:0 0 8px"><b>1 · Spot a stalled or failed sample</b> → the attention list, and the "Stalled / QC failures" views in the graph.</p>
+          <p style="font-size:13px;margin:0 0 8px"><b>2 · Trace one sample's provenance</b> → click a node in the graph, or the search box, then "Trace to origin / results".</p>
+          <p style="font-size:13px;margin:0"><b>3 · Judge pipeline health</b> → this funnel, QC-by-type, and turnaround, filterable by study / sample type.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WORKFLOW -->
+  <section class="view" id="view-workflow">
+    <div class="wf">
+      <h2>Sample workflow — where specimens are in the process</h2>
+      <p class="sub">The pipeline schema. Each real specimen is an instance traversing it; the count is how many have reached each stage.</p>
+      <div class="stages" id="stages"></div>
+      <div class="branchnote"><b>Branch point — AllPrep (extraction).</b> One specimen splits into DNA, RNA and Protein
+        fractions that are QC'd separately and travel to different platforms. A specimen can therefore be
+        <b>complete for DNA and stalled for RNA at the same time</b> — which is why the model is a graph, not a line.</div>
+    </div>
+  </section>
+
+  <!-- KNOWLEDGE GRAPH -->
+  <section class="view" id="view-graph">
+    <aside class="left">
+      <p class="pt">Use-case views</p>
+      <div class="uc" id="ucbtns">
+        <button data-h="stalled"><span class="u">Stalled &gt; 30 days</span><span class="d">1 · spot &amp; act</span></button>
+        <button data-h="fail"><span class="u">QC failures &amp; repeats</span><span class="d">1 · spot &amp; act</span></button>
+        <button data-h="none" class="on"><span class="u">Show everything</span><span class="d">reset the view</span></button>
+      </div>
+      <p class="pt">Filter by node type</p>
+      <div class="fg" id="f-ntype"></div>
+      <p class="pt">Sample type <span style="font-weight:400;color:var(--muted)">(pipeline health)</span></p>
+      <div class="fg" id="f-stype"></div>
+      <p class="pt">Molecule</p>
+      <div class="fg" id="f-mol"></div>
+      <p class="pt">QC outcome</p>
+      <div class="fg" id="f-qc"></div>
+    </aside>
+    <div class="graphwrap">
+      <svg id="gsvg" viewBox="0 0 960 560" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="ghud" id="ghud"></div>
+      <div class="glegend">
+        <i style="background:var(--patient)"></i>Patient &nbsp; <i style="background:var(--sample)"></i>Specimen<br>
+        <i style="background:var(--aliquot)"></i>Aliquot &nbsp; <i style="background:var(--platform)"></i>Platform &nbsp; <i style="background:var(--mtb)"></i>MTB<br>
+        <span style="color:var(--fail)">◯ red ring = QC fail</span> · <span style="color:var(--fail)">╌╌ repeat</span>
+      </div>
+    </div>
+    <aside class="right insp" id="inspector"></aside>
+  </section>
+
+  <!-- PROVENANCE -->
+  <section class="view" id="view-prov">
+    <div class="prov" id="provbody"></div>
+  </section>
+
+<script>
+(function(){
+  "use strict";
+  /* ---------------- synthetic cohort (hand-authored, deterministic) ---------------- */
+  var PAT=[['P01','F',71],['P02','M',64],['P03','F',58],['P04','M',77],
+           ['P05','F',69],['P06','M',72],['P07','F',61],['P08','M',55]];
+  // id, patient, type, reached(1..8), deviation, operator, collectedDay, stalledDays(0=no)
+  var SPEC=[
+    ['S01','P01','FFPE',        8,null,        '10123',3,0],
+    ['S02','P02','Fresh-Frozen',7,'temperature','10456',5,0],
+    ['S03','P03','FFPE',        6,'handling',   '10123',6,34],
+    ['S04','P04','Blood',       4,null,        '10789',8,21],
+    ['S05','P05','Fresh-Frozen',8,null,        '10456',9,0],
+    ['S06','P01','Fresh-Frozen',2,'timing',    '10123',10,12],
+    ['S07','P06','FFPE',        8,null,        '10789',12,0],
+    ['S08','P07','FFPE',        6,null,        '10123',14,31],
+    ['S09','P08','Blood',       7,null,        '10456',15,0],
+    ['S10','P03','Fresh-Frozen',7,null,        '10789',16,0],
+    ['S11','P05','FFPE',        4,null,        '10123',18,0]
+  ];
+  // id, specimen, molecule, qc(pass|fail|pending), platform(CG|GX|CP|null), submitted, dataBack, repeatOf
+  var ALI=[
+    ['A01','S01','DNA','pass','CG',1,1,null],['A02','S01','RNA','pass','GX',1,1,null],['A03','S01','Protein','pass','CP',1,1,null],
+    ['A04','S02','DNA','pass','CG',1,1,null],['A05','S02','RNA','fail',null,0,0,null],['A06','S02','RNA','pass','GX',1,0,'A05'],['A07','S02','Protein','pass','CP',1,1,null],
+    ['A08','S03','DNA','pass','CG',1,0,null],['A09','S03','RNA','fail',null,0,0,null],
+    ['A10','S04','DNA','pass',null,0,0,null],
+    ['A11','S05','DNA','pass','CG',1,1,null],['A12','S05','RNA','pass','GX',1,1,null],['A13','S05','Protein','pass','CP',1,1,null],
+    ['A14','S07','DNA','pass','CG',1,1,null],['A15','S07','RNA','pass','GX',1,1,null],['A16','S07','Protein','pass','CP',1,1,null],
+    ['A17','S08','DNA','pass','CG',1,0,null],['A18','S08','RNA','pass','GX',1,0,null],
+    ['A19','S09','DNA','pass','CG',1,1,null],
+    ['A20','S10','DNA','pass','CG',1,1,null],['A21','S10','RNA','pass','GX',1,1,null],
+    ['A22','S11','DNA','pending',null,0,0,null],['A23','S11','RNA','pending',null,0,0,null]
+  ];
+  var PLAT={CG:'Clinical Genomics',GX:'Genomics Express',CP:'Clinical Proteomics'};
+  var MTB_SPEC=['S01','S05','S07'];             // reached the tumour board
+  var STAGES=['Collected','Pathology','PMSC','Aliquoted','QC pass','Submitted','Data back','MTB'];
+
+  /* index helpers */
+  var patOf={},specOf={},aliBySpec={};
+  PAT.forEach(function(p){patOf[p[0]]={id:p[0],sex:p[1],age:p[2]};});
+  SPEC.forEach(function(s){specOf[s[0]]={id:s[0],pat:s[1],type:s[2],reached:s[3],dev:s[4],op:s[5],day:s[6],stalled:s[7]};});
+  ALI.forEach(function(a){var o={id:a[0],spec:a[1],mol:a[2],qc:a[3],plat:a[4],sub:a[5],data:a[6],rep:a[7]};
+    (aliBySpec[a[1]]=aliBySpec[a[1]]||[]).push(o);});
+  function aliOf(id){for(var i=0;i<ALI.length;i++)if(ALI[i][0]===id)return {id:ALI[i][0],spec:ALI[i][1],mol:ALI[i][2],qc:ALI[i][3],plat:ALI[i][4],sub:ALI[i][5],data:ALI[i][6],rep:ALI[i][7]};return null;}
+
+  var $=function(id){return document.getElementById(id);};
+
+  /* ---------------- KPIs ---------------- */
+  function computeKPIs(){
+    var pass=0,fail=0,pend=0,repeats=0,stalled=0,dataSpec=0;
+    ALI.forEach(function(a){if(a[3]==='pass')pass++;else if(a[3]==='fail')fail++;else pend++;if(a[7])repeats++;});
+    SPEC.forEach(function(s){if(s[7]>0)stalled++;});
+    SPEC.forEach(function(s){var ok=(aliBySpec[s[0]]||[]).some(function(a){return a.data;});if(ok)dataSpec++;});
+    return {patients:PAT.length,specimens:SPEC.length,aliquots:ALI.length,
+      qcrate:Math.round(pass/(pass+fail)*100),dataPct:Math.round(dataSpec/SPEC.length*100),
+      stalled:stalled,repeats:repeats,fail:fail};
+  }
+  function renderKPIs(){
+    var k=computeKPIs();
+    var tiles=[[k.patients,'Patients enrolled'],[k.specimens,'Specimens collected'],[k.aliquots,'Aliquots'],
+      [k.qcrate+'<small>%</small>','QC pass rate'],[k.dataPct+'<small>%</small>','Reached data-back'],
+      [k.stalled,'Stalled samples']];
+    $('kpis').innerHTML=tiles.map(function(t){
+      return '<div class="card kpi"><div class="n">'+t[0]+'</div><div class="l">'+t[1]+'</div></div>';}).join('');
+  }
+  function renderFunnel(){
+    var counts=STAGES.map(function(_,i){return SPEC.filter(function(s){return s[3]>=i+1;}).length;});
+    var max=counts[0];
+    $('fnl-n').textContent=SPEC.length;
+    $('funnel').innerHTML=STAGES.map(function(st,i){
+      return '<div class="row"><span class="lab">'+st+'</span>'+
+        '<span class="bar" style="width:'+Math.max(6,counts[i]/max*100)+'%">'+counts[i]+'</span></div>';}).join('');
+  }
+  function renderQCbars(){
+    var types=['FFPE','Fresh-Frozen','Blood'],data={};
+    types.forEach(function(t){data[t]={p:0,f:0};});
+    ALI.forEach(function(a){var t=specOf[a[1]].type;if(a[3]==='pass')data[t].p++;else if(a[3]==='fail')data[t].f++;});
+    var maxN=Math.max.apply(null,types.map(function(t){return data[t].p+data[t].f;}))||1;
+    $('qcbars').innerHTML=types.map(function(t){
+      var d=data[t],tot=d.p+d.f,h=Math.max(6,tot/maxN*130);
+      var pf=tot?d.p/tot*100:0,ff=tot?d.f/tot*100:0;
+      return '<div class="col"><div class="stk" style="height:'+h+'px">'+
+        '<div class="p" style="height:'+pf+'%"></div><div class="f" style="height:'+ff+'%"></div></div>'+
+        '<div class="cl">'+t+'<br>'+d.p+'✓ '+d.f+'✗</div></div>';}).join('');
+  }
+  var ATTN=[
+    ['S03','stalled','DNA sent to Clinical Genomics — no data back (34 d)'],
+    ['S08','stalled','Sent to platform — awaiting data (31 d)'],
+    ['S04','stalled','DNA passed QC — never submitted (21 d)'],
+    ['S06','stalled','Stuck at pathology — never reached PM-SC (12 d)'],
+    ['S02','repeat','RNA failed QC → repeated → awaiting data'],
+    ['S03','fail','RNA failed QC → excluded'],
+    ['S11','pending','DNA & RNA awaiting QC']
+  ];
+  function renderAttention(){
+    $('attention').innerHTML=ATTN.map(function(a){
+      return '<li data-spec="'+a[0]+'"><span>'+a[0]+' · '+a[2]+'</span><span class="t '+a[1]+'">'+a[1]+'</span></li>';}).join('');
+    $('attention').querySelectorAll('li').forEach(function(li){
+      li.addEventListener('click',function(){openInGraph(li.dataset.spec);});});
+  }
+
+  /* ---------------- workflow ---------------- */
+  function renderWorkflow(){
+    var labels=['Collected','Pathology','PMSC prep','Aliquoted','QC','Submitted','Data back','MTB'];
+    var counts=labels.map(function(_,i){return SPEC.filter(function(s){return s[3]>=i+1;}).length;});
+    var isLab=[0,0,0,1,1,1,0,0];
+    $('stages').innerHTML=labels.map(function(l,i){
+      return '<div class="stg'+(isLab[i]?' lab':'')+'"><div class="sn">'+l+'</div>'+
+        '<div class="sc">'+counts[i]+'</div><div class="sd">specimens</div></div>';}).join('');
+  }
+
+  /* ---------------- knowledge graph ---------------- */
+  var NODES=[],EDGES=[],POS={};
+  function build(){
+    NODES=[];EDGES=[];
+    PAT.forEach(function(p){NODES.push({id:p[0],type:'patient',label:p[0],sex:p[1],age:p[2]});});
+    SPEC.forEach(function(s){NODES.push({id:s[0],type:'sample',label:s[0],stype:s[2],reached:s[3],dev:s[4],op:s[5],stalled:s[7]});
+      EDGES.push({s:s[1],t:s[0]});});
+    ALI.forEach(function(a){NODES.push({id:a[0],type:'aliquot',label:a[2],mol:a[2],qc:a[3],plat:a[4],sub:a[5],data:a[6],rep:a[7],spec:a[1]});
+      EDGES.push({s:a[1],t:a[0]});
+      if(a[4])EDGES.push({s:a[0],t:'PL_'+a[4]});
+      if(a[7])EDGES.push({s:a[0],t:a[7],rep:true});});
+    Object.keys(PLAT).forEach(function(k){NODES.push({id:'PL_'+k,type:'platform',label:k,full:PLAT[k]});});
+    NODES.push({id:'MTB',type:'mtb',label:'MTB'});
+    MTB_SPEC.forEach(function(sid){EDGES.push({s:'PL_CG',t:'MTB',faint:true});});
+    MTB_SPEC.forEach(function(sid){EDGES.push({s:sid,t:'MTB',faint:true});});
+    layout();
+  }
+  function layout(){
+    var H=560,cols={patient:80,sample:300,aliquot:520,platform:760,mtb:900};
+    var by={patient:[],sample:[],aliquot:[],platform:[],mtb:[]};
+    NODES.forEach(function(n){by[n.type].push(n);});
+    Object.keys(by).forEach(function(t){
+      var arr=by[t],n=arr.length;
+      arr.forEach(function(nd,i){POS[nd.id]={x:cols[t],y:n>1?(46+(H-92)*i/(n-1)):H/2};});
+    });
+  }
+
+  /* facet + view state */
+  var facet={ntype:{patient:1,sample:1,aliquot:1,platform:1,mtb:1},
+             stype:{FFPE:1,'Fresh-Frozen':1,Blood:1},
+             mol:{DNA:1,RNA:1,Protein:1},
+             qc:{pass:1,fail:1,pending:1}};
+  var highlight='none', selected=null, traced=null;
+
+  function passes(n){
+    if(!facet.ntype[n.type])return false;
+    if(n.type==='sample'&&!facet.stype[n.stype])return false;
+    if(n.type==='aliquot'){
+      var st=specOf[n.spec].type;
+      if(!facet.stype[st])return false;
+      var m=n.mol==='Protein'?'Protein':n.mol; if(facet.mol[m]===0)return false;
+      if(!facet.qc[n.qc])return false;
+    }
+    return true;
+  }
+  function pathOfSample(sid){
+    var set={}; set[sid]=1; var sp=specOf[sid]; set[sp.pat]=1;
+    (aliBySpec[sid]||[]).forEach(function(a){set[a.id]=1;if(a.plat)set['PL_'+a.plat]=1;});
+    if(MTB_SPEC.indexOf(sid)>=0)set['MTB']=1;
+    return set;
+  }
+  function pathOfAliquot(aid){
+    var a=aliOf(aid),set={}; set[aid]=1; set[a.spec]=1; set[specOf[a.spec].pat]=1;
+    if(a.plat)set['PL_'+a.plat]=1; if(a.rep)set[a.rep]=1;
+    return set;
+  }
+  function computeBright(){
+    var bright={};
+    if(highlight==='none'){ NODES.forEach(function(n){bright[n.id]=passes(n);}); return bright; }
+    // use-case highlights: seed set + full provenance path (filter-then-expand)
+    var seeds=[];
+    if(highlight==='stalled')SPEC.forEach(function(s){if(s[7]>0)seeds.push(pathOfSample(s[0]));});
+    if(highlight==='fail')ALI.forEach(function(a){if(a[3]==='fail'||a[7])seeds.push(pathOfAliquot(a[0]));});
+    seeds.forEach(function(set){for(var k in set)bright[k]=true;});
+    return bright;
+  }
+  function isStalledNode(n){
+    if(n.type==='sample')return n.stalled>0;
+    if(n.type==='aliquot')return specOf[n.spec].stalled>0 && (!n.data);
+    return false;
+  }
+
+  function renderGraph(){
+    var bright=computeBright(), svg=[];
+    // edges
+    EDGES.forEach(function(e){
+      var a=POS[e.s],b=POS[e.t]; if(!a||!b)return;
+      var on=(bright[e.s]&&bright[e.t]);
+      var onPath=traced&&traced[e.s]&&traced[e.t];
+      var m=(a.x+b.x)/2;
+      var col=e.rep?'#e76f51':(onPath?'#2a9d8f':'#b7c3d0');
+      var w=onPath?2.4:(e.rep?1.6:1);
+      var op=onPath?1:(on?(e.faint?.28:.5):.08);
+      var dash=e.rep?' stroke-dasharray="4 3"':'';
+      svg.push('<path d="M'+a.x+' '+a.y+'C'+m+' '+a.y+' '+m+' '+b.y+' '+b.x+' '+b.y+'" fill="none" stroke="'+col+'" stroke-width="'+w+'" opacity="'+op+'"'+dash+'/>');
+    });
+    // nodes
+    var COL={patient:'#264653',sample:'#2a9d8f',aliquot:'#e9c46a',platform:'#457b9d',mtb:'#1d3557'};
+    NODES.forEach(function(n){
+      var p=POS[n.id]; if(!p)return;
+      var on=bright[n.id], onPath=traced&&traced[n.id];
+      var op=onPath?1:(on?1:.12);
+      var r=n.type==='patient'?10:n.type==='platform'?11:n.type==='mtb'?11:n.type==='sample'?9:7;
+      var fill=(n.type==='aliquot'&&n.qc==='pending')?'#b7bcc4':COL[n.type];
+      var sel=selected===n.id;
+      var g='<g class="gnode" data-id="'+n.id+'" style="cursor:pointer" opacity="'+op+'">';
+      // shape
+      if(n.type==='aliquot'){
+        g+='<rect x="'+(p.x-r)+'" y="'+(p.y-r)+'" width="'+(2*r)+'" height="'+(2*r)+'" rx="2" transform="rotate(45 '+p.x+' '+p.y+')" fill="'+fill+'"/>';
+      } else if(n.type==='platform'||n.type==='mtb'){
+        g+='<rect x="'+(p.x-r-4)+'" y="'+(p.y-r)+'" width="'+(2*r+8)+'" height="'+(2*r)+'" rx="5" fill="'+fill+'"/>';
+      } else {
+        g+='<circle cx="'+p.x+'" cy="'+p.y+'" r="'+r+'" fill="'+fill+'"/>';
+      }
+      if(n.type==='aliquot'&&n.qc==='fail')
+        g+='<circle cx="'+p.x+'" cy="'+p.y+'" r="'+(r+4)+'" fill="none" stroke="#e76f51" stroke-width="2"/>';
+      if(isStalledNode(n))
+        g+='<circle cx="'+p.x+'" cy="'+p.y+'" r="'+(r+4)+'" fill="none" stroke="#e76f51" stroke-width="1.6" stroke-dasharray="3 2"/>';
+      if(sel)
+        g+='<circle cx="'+p.x+'" cy="'+p.y+'" r="'+(r+7)+'" fill="none" stroke="#2a9d8f" stroke-width="2"/>';
+      // label
+      var lab=n.type==='platform'?n.label:n.type==='mtb'?'MTB':(n.type==='aliquot'?'':n.label);
+      if(n.type==='patient'||n.type==='sample')
+        g+='<text x="'+p.x+'" y="'+(p.y-r-5)+'" text-anchor="middle" font-size="10" font-weight="600" fill="#3a4048">'+n.label+'</text>';
+      if(n.type==='platform'||n.type==='mtb')
+        g+='<text x="'+p.x+'" y="'+(p.y+3.5)+'" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fff">'+lab+'</text>';
+      g+='</g>';
+      svg.push(g);
+    });
+    // column headers
+    var heads=[['PATIENT',80],['SPECIMEN',300],['ALIQUOT',520],['PLATFORM',760],['MTB',900]];
+    heads.forEach(function(h){svg.push('<text x="'+h[1]+'" y="22" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1" fill="#9aa2ac">'+h[0]+'</text>');});
+    $('gsvg').innerHTML=svg.join('');
+    $('gsvg').querySelectorAll('.gnode').forEach(function(g){
+      g.addEventListener('click',function(){selectNode(g.dataset.id);});});
+    var shown=NODES.filter(function(n){return bright[n.id];}).length;
+    $('ghud').innerHTML='<b>'+shown+'</b> of '+NODES.length+' nodes shown';
+  }
+
+  /* ---------------- inspector ---------------- */
+  function selectNode(id){ selected=id; traced=null; renderGraph(); renderInspector(id); }
+  function idChain(sid){
+    var num=sid.replace('S','');
+    return [['study','STHLM-'+num],['pathology','K-23'+num+'-3'],['biobank','BB-88'+num],
+            ['PM-SC','PMSC-00'+num]];
+  }
+  function renderInspector(id){
+    var n=null; NODES.forEach(function(x){if(x.id===id)n=x;});
+    if(!n){ $('inspector').innerHTML='<p class="empty">Click a node to inspect it — or click a row in the dashboard\'s attention list.</p>'; return; }
+    var h='<p class="ik">Selected · '+n.type+'</p><div class="it">'+n.label+(n.type==='sample'?' · '+n.stype:'')+'</div>';
+    if(n.type==='patient'){
+      h+=kv('Sex',n.sex==='F'?'Female':'Male')+kv('Age',n.age);
+      var specs=SPEC.filter(function(s){return s[1]===n.id;}).map(function(s){return s[0];});
+      h+=kv('Specimens',specs.join(', '));
+    }
+    if(n.type==='sample'){
+      h+=kv('Patient',specOf[n.id].pat)+kv('Type',n.stype)+kv('Reached',STAGES[n.reached-1])+
+         kv('Deviation',n.dev?('⚠ '+n.dev):'none')+(n.stalled>0?kv('Status','<span class="badge fail">stalled '+n.stalled+'d</span>'):'');
+      h+='<div class="chain"><p class="ik" style="margin-bottom:4px">ID chain — one object, four systems</p>';
+      idChain(n.id).forEach(function(c){h+='<div class="step"><span class="sys">'+c[0]+'</span><span class="idv">'+c[1]+'</span></div>';});
+      h+='</div>';
+      h+='<div class="acts"><button data-act="trace-s" data-id="'+n.id+'">Trace full provenance</button>'+
+         '<button class="sec" data-act="prov" data-id="'+n.id+'">Open provenance timeline →</button></div>';
+    }
+    if(n.type==='aliquot'){
+      var qb=n.qc==='pass'?'pass':n.qc==='fail'?'fail':'pending';
+      h+=kv('Molecule',n.mol)+kv('From specimen',n.spec)+kv('QC','<span class="badge '+qb+'">'+n.qc+'</span>')+
+         kv('Platform',n.plat?PLAT[n.plat]:'—')+kv('Submitted',n.sub?'yes':'no')+kv('Data back',n.data?'yes':(n.sub?'awaiting':'—'))+
+         (n.rep?kv('Repeat of',n.rep):'');
+      h+='<div class="acts"><button data-act="origin" data-id="'+n.id+'">◀ Trace to origin</button>'+
+         '<button data-act="results" data-id="'+n.id+'">Trace to results ▶</button>'+
+         '<button class="sec" data-act="prov" data-id="'+n.spec+'">Open provenance timeline →</button></div>';
+    }
+    if(n.type==='platform'){
+      var subs=ALI.filter(function(a){return a[4]===n.label;});
+      h+=kv('Facility',n.full)+kv('Aliquots received',subs.length)+
+         kv('Data returned',subs.filter(function(a){return a[6];}).length);
+    }
+    if(n.type==='mtb'){
+      h+=kv('Cases at board',MTB_SPEC.length)+kv('From specimens',MTB_SPEC.join(', '));
+    }
+    $('inspector').innerHTML=h;
+    $('inspector').querySelectorAll('[data-act]').forEach(function(b){
+      b.addEventListener('click',function(){doAct(b.dataset.act,b.dataset.id);});});
+  }
+  function kv(k,v){return '<div class="kv"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';}
+  function doAct(act,id){
+    if(act==='trace-s'){traced=pathOfSample(id);renderGraph();}
+    else if(act==='origin'){var a=aliOf(id);traced={};traced[id]=1;traced[a.spec]=1;traced[specOf[a.spec].pat]=1;renderGraph();}
+    else if(act==='results'){var a=aliOf(id);traced={};traced[id]=1;if(a.plat)traced['PL_'+a.plat]=1;if(MTB_SPEC.indexOf(a.spec)>=0)traced['MTB']=1;renderGraph();}
+    else if(act==='prov'){openProv(id);}
+  }
+
+  /* ---------------- provenance timeline ---------------- */
+  function openProv(sid){
+    var s=specOf[sid], alis=aliBySpec[sid]||[];
+    var steps=[['Enrolled','patient '+s.pat,'day 0'],['Collected',s.type,'day '+s.day],
+      ['Pathology','received',s.dev?('⚠ '+s.dev):'ok'],['PM-SC prep',s.reached>=3?'registered':'—',''],
+      ['Aliquoted',s.reached>=4?(alis.length+' fractions'):'—','']];
+    var fail=alis.some(function(a){return a.qc==='fail';});
+    var h='<h2>Sample '+sid+' · '+s.type+' — provenance</h2>'+
+      '<p class="sub">Patient '+s.pat+' · the same object as in the knowledge graph, drawn as a timeline.</p><div class="tl">';
+    steps.forEach(function(st){h+='<div class="tstep"><div class="ts">'+st[0]+'</div><div class="ti">'+st[1]+'</div><div class="td">'+st[2]+'</div></div>';});
+    alis.forEach(function(a){
+      var status=a.qc==='fail'?'QC FAIL':a.qc==='pending'?'QC pending':(a.data?'data back':a.sub?'awaiting data':'not sent');
+      h+='<div class="tstep'+(a.qc==='fail'?' fail':'')+'"><div class="ts">'+a.mol+(a.rep?' (repeat)':'')+'</div>'+
+         '<div class="ti">'+(a.plat?PLAT[a.plat]:'—')+'</div><div class="td">'+status+'</div></div>';
+    });
+    h+='</div>';
+    var rep=alis.filter(function(a){return a.rep;});
+    if(rep.length)h+='<div class="branchbox"><b>QC-failure branch:</b> the RNA aliquot failed QC and a <b>repeat extraction</b> was created. The graph keeps the failed node linked to its retry by a <b>repeat_of</b> edge instead of discarding it — you can still see what happened.</div>';
+    else if(fail)h+='<div class="branchbox"><b>QC-failure branch:</b> an aliquot failed QC and was excluded. It stays in the graph, linked to its specimen, so the failure is auditable.</div>';
+    $('provbody').innerHTML=h;
+    switchTab('prov');
+  }
+
+  /* ---------------- cross-tab + search ---------------- */
+  function openInGraph(sid){ switchTab('graph'); selected=sid; traced=pathOfSample(sid); highlight='none';
+    syncHighlightBtns(); renderGraph(); renderInspector(sid); }
+  function switchTab(v){
+    document.querySelectorAll('nav.tabs button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v);});
+    document.querySelectorAll('.view').forEach(function(s){s.classList.toggle('on',s.id==='view-'+v);});
+  }
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click',function(){switchTab(b.dataset.v);});});
+
+  $('q').addEventListener('keydown',function(e){
+    if(e.key!=='Enter')return;
+    var v=e.target.value.trim().toUpperCase(), sid=null;
+    SPEC.forEach(function(s){var num=s[0].replace('S','');
+      if(v===s[0]||v.indexOf(num)>=0&&(v.indexOf('PMSC')>=0||v.indexOf('K-')>=0||v.indexOf('BB')>=0||v.indexOf('STHLM')>=0))sid=s[0];});
+    if(!sid&&/^S\d/.test(v))sid=v.slice(0,3);
+    if(sid&&specOf[sid]){openInGraph(sid);} else {e.target.style.outline='2px solid #e76f51';setTimeout(function(){e.target.style.outline='';},700);}
+  });
+
+  /* ---------------- facet UI ---------------- */
+  function facetGroup(host,group,items,colors){
+    $(host).innerHTML=items.map(function(it){
+      var c=colors&&colors[it]?'<span class="dot" style="background:'+colors[it]+'"></span>':'';
+      return '<label class="ck"><input type="checkbox" data-g="'+group+'" data-v="'+it+'" checked>'+c+it+'</label>';}).join('');
+  }
+  function initFacets(){
+    facetGroup('f-ntype','ntype',['patient','sample','aliquot','platform','mtb'],
+      {patient:'#264653',sample:'#2a9d8f',aliquot:'#e9c46a',platform:'#457b9d',mtb:'#1d3557'});
+    facetGroup('f-stype','stype',['FFPE','Fresh-Frozen','Blood']);
+    facetGroup('f-mol','mol',['DNA','RNA','Protein']);
+    facetGroup('f-qc','qc',['pass','fail','pending']);
+    document.querySelectorAll('aside.left input[type=checkbox]').forEach(function(cb){
+      cb.addEventListener('change',function(){
+        facet[cb.dataset.g][cb.dataset.v]=cb.checked?1:0;
+        highlight='none'; syncHighlightBtns(); traced=null; renderGraph();});
+    });
+    $('ucbtns').querySelectorAll('button').forEach(function(b){
+      b.addEventListener('click',function(){
+        highlight=b.dataset.h; traced=null; selected=null; renderInspector(null);
+        syncHighlightBtns(); renderGraph();});
+    });
+  }
+  function syncHighlightBtns(){
+    $('ucbtns').querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.h===highlight);});
+  }
+
+  /* ---------------- boot ---------------- */
+  renderKPIs();renderFunnel();renderQCbars();renderAttention();renderWorkflow();
+  build();initFacets();renderGraph();renderInspector(null);
+})();
+</script>
+</body>
+</html>

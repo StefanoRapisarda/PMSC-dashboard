@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PMSC Dashboard — mockup</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#fff; --border:#e3e6ea; --ink:#2b2f36; --muted:#7a828c;
+    --patient:#ff6b9d; --sample:#2a9d8f; --aliquot:#e9c46a; --platform:#457b9d;
+    --operator:#8d99ae; --study:#1d3557; --fail:#e76f51; --accent:#2a9d8f;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);
+    background:var(--bg);overflow:hidden}
+  .mockbanner{background:#fff5e6;border-bottom:1px solid #f0d9a8;color:#8a6d1a;font-size:12px;
+    text-align:center;padding:4px}
+  header.top{display:flex;align-items:center;gap:20px;background:var(--panel);
+    border-bottom:1px solid var(--border);padding:10px 18px}
+  .brand{font-weight:700}.brand small{font-weight:400;color:var(--muted)}
+  nav.tabs{display:flex;gap:4px;margin-left:auto}
+  nav.tabs button{border:0;background:none;font:inherit;padding:7px 14px;border-radius:8px;
+    color:var(--muted);font-weight:600;cursor:pointer}
+  nav.tabs button.active{background:var(--accent);color:#fff}
+  .tabsep{width:1px;height:22px;background:var(--border);margin:0 8px;align-self:center}
+  .view{display:none;height:calc(100vh - 92px)}
+  .view.active{display:block}
+
+  /* ---------- KNOWLEDGE GRAPH VIEW ---------- */
+  #view-graph.active{display:grid;grid-template-columns:262px 1fr 250px}
+  aside{background:var(--panel);border-right:1px solid var(--border);overflow:auto;padding:14px}
+  aside.right{border-right:0;border-left:1px solid var(--border)}
+  .panel-title{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+  .fgroup{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .fhead{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fafbfc;font-weight:600}
+  .dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+  .fhead .chev{margin-left:auto;color:var(--muted)}
+  .fbody{padding:8px 12px 12px}
+  .facet{margin:8px 0 2px;font-size:12px;color:var(--muted)}
+  label.chk{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:13px}
+  input[type=checkbox]{accent-color:var(--accent)}
+  .range{height:4px;background:#e6e9ec;border-radius:3px;position:relative;margin:12px 4px 6px}
+  .range .fill{position:absolute;left:20%;right:25%;top:0;bottom:0;background:var(--accent);border-radius:3px}
+  .range .knob{position:absolute;top:50%;width:13px;height:13px;border-radius:50%;background:#fff;
+    border:2px solid var(--accent);transform:translate(-50%,-50%)}
+  .rangelabels{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--border);border-radius:14px;padding:4px 10px;font-size:12px;background:#fff;cursor:pointer}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip.warn.on{background:var(--fail);border-color:var(--fail)}
+
+  .graphwrap{position:relative;background:radial-gradient(120% 120% at 50% 30%,#16233b 0%,#0c1320 70%,#080d16 100%);overflow:hidden}
+  #graph{display:block;width:100%;height:100%;cursor:grab}
+  #graph:active{cursor:grabbing}
+  .hud{position:absolute;top:12px;left:14px;color:#aeb9c9;font-size:12px;z-index:2;
+    text-shadow:0 1px 3px #000;pointer-events:none}
+  .hud b{color:#e8eef7}
+  .legend{position:absolute;right:14px;bottom:14px;background:rgba(12,19,32,.82);color:#cdd6e2;
+    border:1px solid #2a3b57;border-radius:10px;padding:10px 12px;font-size:12px;z-index:2;backdrop-filter:blur(3px)}
+  .legend h4{margin:0 0 6px;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#8ea0ba}
+  .legend .row{display:flex;align-items:center;gap:8px;margin:4px 0}
+  .swatch{width:13px;height:13px;flex:0 0 auto}
+  .sw-circle{border-radius:50%}.sw-square{border-radius:3px}.sw-diamond{transform:rotate(45deg);border-radius:2px}
+  .sw-pill{width:20px;border-radius:7px}
+  .sw-tri{width:0;height:0;background:none!important;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:13px solid var(--operator)}
+  .layoutsw{position:absolute;bottom:12px;left:14px;display:flex;gap:2px;
+    background:rgba(12,19,32,.82);border:1px solid #2a3b57;border-radius:10px;padding:3px;z-index:3;backdrop-filter:blur(3px)}
+  .spinsw{position:absolute;bottom:52px;left:14px;z-index:3;background:rgba(12,19,32,.82);border:1px solid #2a3b57;
+    border-radius:9px;padding:6px 12px;color:#cdd6e2;font:inherit;font-size:12px;font-weight:600;cursor:pointer;backdrop-filter:blur(3px)}
+  .spinsw:hover{color:#fff}.spinsw.off{color:#8ea0ba}
+  .layoutsw button{border:0;background:none;color:#aeb9c9;font:inherit;font-size:12px;font-weight:600;
+    padding:6px 12px;border-radius:8px;cursor:pointer}
+  .layoutsw button.on{background:var(--accent);color:#fff}
+  .tip{position:absolute;z-index:5;pointer-events:none;background:#0c1320;color:#e8eef7;border:1px solid #33456a;
+    border-radius:8px;padding:6px 9px;font-size:12px;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+  .tip .t{font-weight:700}.tip .s{color:#9fb0c9;font-size:11px}
+
+  .kv{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px}
+  .kv .k{color:var(--muted)}.kv .v{font-weight:600;text-align:right}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .badge.pass{background:#e4f4ee;color:#1c7a5b}.badge.fail{background:#fdece7;color:#b3401f}
+  .hint{font-size:11px;color:var(--muted);margin-top:14px;line-height:1.5}
+
+  /* ---------- STUDY DASHBOARD VIEW ---------- */
+  .dash{height:100%;overflow:auto;padding:22px 26px}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
+  @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .kpi{padding:14px 15px;position:relative;cursor:default}
+  .kpi .n{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1}.kpi .l{color:var(--muted);font-size:12px;margin-top:3px}
+  /* hover description, sits on top of the cards below */
+  .kpi[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:0;right:0;top:calc(100% + 7px);z-index:30;
+    background:#22303b;color:#fff;font-size:11.5px;font-weight:400;line-height:1.45;padding:8px 11px;border-radius:8px;
+    box-shadow:0 8px 22px rgba(0,0,0,.28);white-space:normal;pointer-events:none}
+  .kpi[data-tip]:hover::before{content:'';position:absolute;left:18px;top:calc(100% + 2px);z-index:31;
+    border:5px solid transparent;border-bottom-color:#22303b;pointer-events:none}
+  .kpi .n small{font-size:14px;color:var(--accent);font-weight:700}
+  .grid2{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .card h3{margin:0 0 14px;font-size:14px}
+  .funnel .row{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}
+  .funnel .lab{width:112px;flex:0 0 auto;color:var(--muted)}
+  .funnel .track{flex:1;height:22px;background:#eef1f4;border-radius:5px;overflow:hidden}
+  .funnel .bar{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--accent),#5bbfae);display:flex;align-items:center;color:#fff;font-size:12px;font-weight:600;padding:0 8px;min-width:26px}
+  /* QC by type: horizontal stacked bars — name | proportion | counts, no overlap */
+  .qcchart{display:flex;flex-direction:column;gap:14px;padding-top:4px}
+  .qcrow{display:flex;align-items:center;gap:10px;font-size:13px}
+  .qcname{width:96px;flex:0 0 auto;color:var(--muted)}
+  .qctrack{flex:1;height:20px;border-radius:5px;background:#eef1f4;overflow:hidden;display:flex}
+  .qctrack .p{background:var(--accent);height:100%}.qctrack .f{background:var(--fail);height:100%}
+  .qcnum{flex:0 0 auto;width:118px;text-align:right;color:var(--muted);font-size:12px}
+  .stuck li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--border);font-size:13px;list-style:none}
+  .stuck ul{margin:0;padding:0}
+  .pill{font-size:11px;padding:2px 8px;border-radius:10px;background:#fdece7;color:#b3401f;font-weight:600}
+
+  /* ---------- PROVENANCE VIEW ---------- */
+  .prov{height:100%;overflow:auto;padding:22px 26px}
+  .prov h2{margin:0 0 4px}.prov .sub{color:var(--muted);margin:0 0 18px}
+  .track{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:8px}
+  .step{min-width:150px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 12px;position:relative}
+  .step + .step{margin-left:26px}
+  .step + .step::before{content:"→";position:absolute;left:-22px;top:50%;transform:translateY(-50%);color:#b7c0c7}
+  .step .st{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .step .ti{font-weight:600;margin:3px 0}
+  .step .dt{font-size:12px;color:var(--muted)}
+  .step.on-p{border-color:var(--patient)} .step.on-s{border-color:var(--sample)}
+  .step.on-a{border-color:var(--aliquot)} .step.on-pl{border-color:var(--platform)}
+  .branch{margin:22px 0 0;padding:14px;border:1px dashed var(--fail);border-radius:10px;background:#fef6f3;max-width:640px}
+  .branch b{color:var(--fail)}
+  .swimtitle{margin:26px 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .swim{display:grid;grid-template-columns:120px 1fr;gap:6px 12px;align-items:center}
+  .swim .lane{color:var(--muted);font-size:13px}
+  .swim .barwrap{position:relative;height:20px;background:#f0f2f4;border-radius:5px}
+  .swim .seg{position:absolute;height:100%;border-radius:5px;background:var(--sample);opacity:.85}
+  .swim .seg.a{background:var(--aliquot)}.swim .seg.p{background:var(--platform)}.swim .seg.f{background:var(--fail)}
+  .prov .mtitle{margin:16px 0 4px;font-size:14px;color:var(--patient)}
+  .prov .mermaid{background:#fafafa;border:1px solid var(--border);border-radius:8px;padding:14px;margin:4px 0 16px;text-align:center;overflow:auto}
+
+  /* ---------- JOURNEY VIEW ---------- */
+  .jrn{height:100%;overflow:auto;padding:20px 26px}
+  .jhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+  .jctrl{display:flex;align-items:center;gap:10px}
+  .jbtn{border:1px solid var(--border);background:#fff;border-radius:8px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+  .jbtn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .clock{color:var(--muted);font-size:13px}.clock b{color:var(--ink)}
+  .progwrap{height:5px;background:#e6e9ec;border-radius:3px;margin:14px 0 4px;overflow:hidden}
+  .prog{height:100%;width:5%;background:var(--accent)}
+  .rail2{display:flex;align-items:center;overflow-x:auto;padding:14px 2px 16px}
+  .rail2 .stg{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:96px;
+    background:#fff;border:1px solid var(--border);border-top:3px solid var(--ph);border-radius:10px;padding:8px;cursor:pointer}
+  .rail2 .stg.active{box-shadow:0 0 0 2px var(--ph)}
+  .rail2 .stg .num{width:20px;height:20px;border-radius:50%;background:var(--ph);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .rail2 .stg .sn{font-size:12px;font-weight:600;text-align:center;line-height:1.2}
+  .rail2 .stg .du{font-size:11px;color:var(--muted)}
+  .rail2 .conn{flex:0 0 auto;width:16px;height:2px;background:#cfd6db}
+  /* workflow — custodian swimlane timeline */
+  #jrail{position:relative}
+  .swim{display:flex;align-items:flex-start;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff}
+  .lanescol{flex:0 0 158px;background:#fff;border-right:1px solid var(--border)}
+  .lanescol .sp{height:44px;border-bottom:1px solid var(--border)}
+  .lanelab{height:56px;display:flex;align-items:center;font-size:12px;color:var(--muted);font-weight:600;
+    border-bottom:1px solid #f0f2f4;padding:0 10px;line-height:1.1}
+  .tlwrap{flex:1;overflow-x:auto}
+  .tl{position:relative;min-width:100%}
+  .tlsvg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:0}
+  /* elapsed-time markers, sitting in a dedicated header band above the lanes */
+  .axtick{position:absolute;top:12px;font-size:11px;font-weight:700;color:var(--ink);transform:translateX(-50%);white-space:nowrap;z-index:4}
+  .axtick::after{content:'';position:absolute;left:50%;top:20px;width:1px;height:12px;background:var(--border)}
+  .wfbar{position:absolute;box-sizing:border-box;height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;
+    padding:0 8px;cursor:pointer;color:#fff;z-index:1;overflow:hidden;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.14)}
+  .wfbar.light{color:#3a3320}
+  .wfbar.active{outline:2px solid #22303b;outline-offset:1px;z-index:3}
+  .wfbar .bl{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
+  /* duration label BELOW each bar so it is never clipped by a narrow card */
+  .wfdur{position:absolute;text-align:center;font-size:10.5px;font-weight:600;color:var(--muted);
+    white-space:nowrap;overflow:visible;pointer-events:none;z-index:2}
+  .jbody{display:grid;grid-template-columns:1fr 300px;gap:18px;margin-top:6px}
+  .jdetail{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+  .jdetail .phase{display:inline-block;color:#fff;font-size:11px;font-weight:700;padding:2px 10px;border-radius:10px;margin-bottom:8px}
+  .jdetail h2{margin:0 0 12px;font-size:18px}
+  .jdetail .desc{margin-top:12px;line-height:1.6}
+  .jdetail .note{margin-top:10px;background:#f6f8fa;border-left:3px solid var(--accent);padding:8px 12px;border-radius:6px;color:var(--muted);font-size:13px}
+  .jside .phases{display:flex;flex-direction:column;gap:5px}
+  .jside .pl{display:flex;align-items:center;gap:8px;font-size:13px}
+  .jside .pl i{width:12px;height:12px;border-radius:3px}
+  .tot{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--border)}
+  .tot b{color:var(--accent)}
+  .tnote{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .branchbox{font-size:12px;color:var(--muted);line-height:1.5;margin-top:12px;background:#f6f8fa;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+  .branchbox b{color:var(--ink)}
+</style>
+</head>
+<body>
+  <div class="mockbanner">◐ CONCEPT DEMO v2 · synthetic PreDDLung data · the graph uses 11 node types — toggle a node type to show or hide the ID chain, QC, deviations &amp; storage · click a node to trace its provenance, double-click to expand its neighbours</div>
+
+  <header class="top">
+    <div class="brand">PMSC Dashboard <small>· PreDDLung (showcase)</small></div>
+    <nav class="tabs">
+      <button data-view="journey" class="active">Workflow</button>
+      <span class="tabsep"></span>
+      <button data-view="dashboard">Study dashboard</button>
+      <button data-view="graph">Knowledge graph</button>
+    </nav>
+  </header>
+
+  <!-- ===================== STUDY DASHBOARD ===================== -->
+  <section class="view" id="view-dashboard">
+    <div class="dash">
+      <div class="kpis" id="kpis"></div>
+      <div class="grid2">
+        <div class="card">
+          <h3>QC pass / fail by sample type</h3>
+          <div class="qcchart" id="qcbars"></div>
+        </div>
+        <div class="card">
+          <h3>Turnaround (median)</h3>
+          <div class="kv"><span class="k">Surgery → Pathology</span><span class="v">15 min</span></div>
+          <div class="kv"><span class="k">Pathology → PMSC prep</span><span class="v">1.2 days</span></div>
+          <div class="kv"><span class="k">Extraction → QC</span><span class="v">1 h</span></div>
+          <div class="kv"><span class="k">Sent → data back (CG)</span><span class="v">60–72 h</span></div>
+          <div class="kv"><span class="k">Data → MTB order</span><span class="v">24–48 h</span></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Cohort flow — custodian phases, splitting at SciLifeLab</h3>
+        <div id="sankey" style="width:100%;overflow-x:auto"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== KNOWLEDGE GRAPH ===================== -->
+  <section class="view" id="view-graph">
+    <aside class="left">
+      <p class="panel-title">Use-case views</p>
+      <div class="chips" style="margin-bottom:9px">
+        <span class="chip warn">QC failures</span>
+        <span class="chip">Stalled</span>
+        <span class="chip">Repeats</span>
+        <span class="chip">Blood-only</span>
+        <span class="chip">Deviations</span>
+      </div>
+      <button class="ucbtn" data-uc="incident" style="width:100%;text-align:left;border:1px solid var(--fail);background:#fff;color:var(--fail);border-radius:9px;padding:8px 10px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;margin-bottom:6px">❄ Freezer incident — box B-3 →</button>
+      <button class="ucbtn" data-uc="shared" style="width:100%;text-align:left;border:1px solid var(--border);background:#fff;color:var(--ink);border-radius:9px;padding:8px 10px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Shared-cause (operator) →</button>
+
+      <p class="panel-title" style="margin-top:15px">Node types <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(11) — toggle to show / hide</span></p>
+      <div id="layerbox"></div>
+
+      <p class="panel-title" style="margin-top:15px">Filters</p>
+      <div class="facet">Patient sex</div>
+      <label class="chk"><input type="checkbox" data-f="sex" data-v="F" checked>Female</label>
+      <label class="chk"><input type="checkbox" data-f="sex" data-v="M" checked>Male</label>
+      <div class="facet" style="margin-top:8px">Patient age</div>
+      <label class="chk"><input type="checkbox" data-f="age" data-v="&lt;65" checked>under 65</label>
+      <label class="chk"><input type="checkbox" data-f="age" data-v="65-74" checked>65–74</label>
+      <label class="chk"><input type="checkbox" data-f="age" data-v="75+" checked>75 or older</label>
+      <div class="facet" style="margin-top:8px">Sample type</div>
+      <label class="chk"><input type="checkbox" data-f="stype" data-v="FFPE" checked>FFPE</label>
+      <label class="chk"><input type="checkbox" data-f="stype" data-v="Fresh-Frozen" checked>Fresh-Frozen</label>
+      <label class="chk"><input type="checkbox" data-f="stype" data-v="Blood" checked>Blood</label>
+      <div class="facet" style="margin-top:8px">Molecule</div>
+      <label class="chk"><input type="checkbox" data-f="mol" data-v="DNA" checked>DNA</label>
+      <label class="chk"><input type="checkbox" data-f="mol" data-v="RNA" checked>RNA</label>
+      <label class="chk"><input type="checkbox" data-f="mol" data-v="Protein" checked>Protein</label>
+      <div class="facet" style="margin-top:8px">QC outcome</div>
+      <label class="chk"><input type="checkbox" data-f="qc" data-v="pass" checked>Pass</label>
+      <label class="chk"><input type="checkbox" data-f="qc" data-v="fail" checked>Fail</label>
+    </aside>
+
+    <div class="graphwrap">
+      <canvas id="graph"></canvas>
+      <button id="spinBtn" class="spinsw">⏸ Rotation</button>
+      <div class="hud">3D knowledge graph · <b id="ncount">0</b> nodes · <b id="ecount">0</b> edges<br>
+        <span style="color:#8ea0ba">drag to rotate · scroll to zoom · hover a node</span></div>
+      <div class="layoutsw">
+        <button data-l="force" class="on">Force</button>
+        <button data-l="layered">Layered · pipeline</button>
+        <button data-l="grouped">Grouped · by type</button>
+      </div>
+      <div class="tip" id="tip"><div class="t"></div><div class="s"></div></div>
+      <div class="legend" style="max-height:calc(100% - 24px);overflow:auto">
+        <h4>Node types</h4>
+        <div class="row"><span class="swatch sw-circle" style="background:#ff6b9d"></span>Patient <span style="color:#8ea0ba;margin-left:4px">OMOP Person</span></div>
+        <div class="row"><span class="swatch sw-circle" style="background:#ff9f1c"></span>Identifier <span style="color:#8ea0ba;margin-left:4px">ID chain</span></div>
+        <div class="row"><span class="swatch sw-circle" style="background:#2ec4b6"></span>Specimen <span style="color:#8ea0ba;margin-left:4px">MIABIS</span></div>
+        <div class="row"><span class="swatch sw-circle" style="background:#c98a5e"></span>Activity <span style="color:#8ea0ba;margin-left:4px">PROV-O</span></div>
+        <div class="row"><span class="swatch sw-circle" style="background:#e9c46a"></span>Aliquot <span style="color:#8ea0ba;margin-left:4px">CKG</span></div>
+        <div class="row"><span class="swatch sw-circle" style="background:#7c6df2"></span>QC result</div>
+        <div class="row"><span class="swatch sw-circle" style="background:#e76f51"></span>Deviation</div>
+        <div class="row"><span class="swatch sw-circle" style="background:#4cc9f0"></span>Platform / Facility</div>
+        <div class="row"><span class="swatch sw-circle" style="background:#94a7bd"></span>Storage</div>
+        <div class="row"><span class="swatch sw-circle" style="background:#b0bccb"></span>Operator</div>
+        <h4 style="margin-top:8px">Status</h4>
+        <div class="row"><span class="swatch sw-circle" style="background:#e9c46a;box-shadow:0 0 0 2px #e76f51"></span>QC failed · ╌ repeat</div>
+      </div>
+    </div>
+
+    <aside class="right">
+      <p class="panel-title" id="selkind">Selected · Sample</p>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px" id="seltitle">S-1 · FFPE</div>
+      <div id="seldetail">
+        <div class="kv"><span class="k">Study ID</span><span class="v">PMSC-0042</span></div>
+        <div class="kv"><span class="k">Patient</span><span class="v">P-01</span></div>
+        <div class="kv"><span class="k">PAD number</span><span class="v">K2347-25 3C</span></div>
+        <div class="kv"><span class="k">DNA QC</span><span class="v"><span class="badge pass">Pass</span></span></div>
+        <div class="kv"><span class="k">RNA QC</span><span class="v"><span class="badge fail">Fail → repeat</span></span></div>
+      </div>
+      <p class="hint">Hover nodes in the graph to explore; click one to load it here. Real build would
+      open the Provenance timeline for a clicked sample. Placeholder — nothing wired to data.</p>
+    </aside>
+  </section>
+
+  <!-- ===================== WORKFLOW (step-by-step) ===================== -->
+  <section class="view active" id="view-journey">
+    <div class="jrn">
+      <div class="jhead">
+        <div>
+          <h2 style="margin:0">PreDDLung sample journey</h2>
+        </div>
+      </div>
+      <div id="jrail" class="flow2"></div>
+      <div class="jbody">
+        <div id="jdetail" class="jdetail"></div>
+        <div class="jside">
+          <p class="panel-title">Phases</p>
+          <div id="jphases" class="phases"></div>
+          <p class="panel-title" style="margin-top:14px">Totals</p>
+          <div id="jtotals"></div>
+          <div class="branchbox"><b>After AllPrep (step 14)</b> the sample splits into <b>DNA</b>, <b>RNA</b> and
+            <b>Protein</b> fractions that proceed in parallel; each is QC'd separately, and a failed RNA can
+            trigger a repeat extraction.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<script>
+/* ---------------- tab switching ---------------- */
+const tabs=[...document.querySelectorAll('nav.tabs button')];
+const views={dashboard:'view-dashboard',graph:'view-graph',journey:'view-journey'};
+tabs.forEach(b=>b.addEventListener('click',()=>{
+  tabs.forEach(t=>t.classList.toggle('active',t===b));
+  Object.values(views).forEach(id=>document.getElementById(id).classList.remove('active'));
+  document.getElementById(views[b.dataset.view]).classList.add('active');
+  if(b.dataset.view==='graph') requestAnimationFrame(resize);
+  if(b.dataset.view==='journey'){ if(window.initJourney)initJourney(); if(window.relayoutJourney)requestAnimationFrame(relayoutJourney); }
+}));
+
+/* ---------------- 3D knowledge graph (v2 — full metagraph) ---------------- */
+/* bright, well-separated palette for the dark canvas (no dark colours that sink into the bg) */
+const COLORS={study:'#b15dff',patient:'#ff6b9d',identifier:'#ff9f1c',sample:'#2ec4b6',
+  activity:'#c98a5e',operator:'#b0bccb',aliquot:'#e9c46a',qc:'#7c6df2',deviation:'#e76f51',
+  platform:'#4cc9f0',storage:'#94a7bd',mtb:'#b15dff'};
+const RAD={study:13,patient:9,identifier:4,sample:8,activity:6,operator:6.5,aliquot:6,qc:4.5,
+  deviation:5.5,platform:11,storage:7,mtb:11};
+const ONT={patient:'OMOP Person',sample:'CKG Biological_sample · MIABIS / SPREC',
+  aliquot:'CKG Analytical_sample',activity:'PROV-O Activity',operator:'PROV-O Agent · HSA-ID',
+  identifier:'Persistent identifier (PID)',platform:'PROV-O Agent · facility',
+  qc:'QCResult node',deviation:'Deviation node',storage:'StorageLocation',mtb:'MTB case',study:'Study'};
+
+let seed=1337; const rnd=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;};
+const nodes=[], edges=[];
+function add(type,label,extra){const n={id:nodes.length,type,label,...extra,
+  x:(rnd()-.5)*320,y:(rnd()-.5)*320,z:(rnd()-.5)*320,vx:0,vy:0,vz:0};nodes.push(n);return n;}
+function link(a,b,type){edges.push({a:a.id,b:b.id,type});}
+
+/* --- storage: freezers > racks > boxes --- */
+const frzCCK=add('storage','Freezer A0 · CCK',{kind:'freezer'});
+const frzPat=add('storage','Pathology -80',{kind:'freezer'});
+const rackR=add('storage','Rack R-12',{kind:'rack'}); link(frzCCK,rackR,'contains');
+const rackR2=add('storage','Rack R-13',{kind:'rack'}); link(frzCCK,rackR2,'contains');
+const rackP=add('storage','Rack PR',{kind:'rack'}); link(frzPat,rackP,'contains');
+const boxes={};
+[['B-1',rackR],['B-2',rackR],['B-3',rackR],['B-4',rackR],['B-5',rackR],['B-6',rackR2],['B-7',rackR2],['B-8',rackR2],['PR-1',rackP],['PR-2',rackP]]
+  .forEach(bx=>{const b=add('storage',bx[0],{kind:'box'});link(bx[1],b,'contains');boxes[bx[0]]=b;});
+const boxKeys=Object.keys(boxes);
+
+/* --- shared agents --- */
+const platforms={CG:add('platform','Clinical Genomics',{}),GX:add('platform','Genomics Express',{}),MS:add('platform','Clinical Proteomics',{})};
+const ops=[]; for(let i=0;i<8;i++)ops.push(add('operator','HSA-1'+String(10+i*7).padStart(3,'0'),{}));
+const mtb=add('mtb','MTB board',{});
+
+/* --- procedural cohort --- */
+const N_PATIENTS=50;                  /* dial the cohort size here */
+function ageBucket(a){return a<65?'<65':a<75?'65-74':'75+';}
+const pad3=x=>String(x).padStart(3,'0');
+const rp=a=>a[Math.floor(rnd()*a.length)];
+const sTypes=['FFPE','FFPE','Fresh-Frozen','Fresh-Frozen','Blood'];
+const devTypes=['timing','temperature','handling','labelling'];
+const idSchemes=[['study_id','REDCap','STHLM-'],['PAD','Sympathy LIMS','K-23'],['tube_label','KI Biobank','BB-'],['pmsc_id','PM-SC','PMSC-']];
+const patNodes=[], sampleNodes=[];
+let sIdx=0;
+for(let p=1;p<=N_PATIENTS;p++){
+  const pat=add('patient','P-'+pad3(p),{sex:rnd()<.5?'F':'M',age:45+Math.floor(rnd()*40),consent:true});
+  patNodes.push(pat);
+  const nS=rnd()<.30?2:1;
+  for(let k=0;k<nS;k++){
+    sIdx++; const num=pad3(sIdx);
+    const type=rp(sTypes);
+    const r=rnd(); const reached = r<.08?2 : r<.16?4 : r<.28?6 : r<.5?7 : 8;
+    const dev=rnd()<.22?rp(devTypes):null;
+    const box=boxes[rp(boxKeys)];
+    const s=add('sample','S-'+num,{stype:type,reached:reached,box:box.label,devType:dev,_psex:pat.sex,_page:pat.age});
+    s._num=num; sampleNodes.push(s);
+    link(pat,s,'has_sample');
+    idSchemes.forEach(sc=>{const idn=add('identifier',sc[0],{scheme:sc[0],system:sc[1],value:sc[2]+num});link(s,idn,'identified_as');});
+    if(dev){const dn=add('deviation',dev,{devtype:dev});link(s,dn,'has_deviation');s._devNode=dn;}
+    s._alis=[];
+    if(reached>=4){
+      const act=add('activity','AllPrep',{kind:'AllPrep'});link(act,s,'used');link(rp(ops),act,'performed');s._act=act;
+      const mols=type==='Blood'?['DNA']:['DNA','RNA','Protein','Peptide'];
+      const local=[];
+      mols.forEach(m=>{
+        const mroot=m.indexOf('RNA')===0?'RNA':m;
+        let qc = reached<5 ? 'pending' : 'pass';
+        if(m==='RNA'&&reached>=5){const fp=type==='FFPE'?.4:.12; if(rnd()<fp)qc='fail';}
+        const al=add('aliquot',m,{mol:mroot,molLabel:m,qc:qc});
+        link(act,al,'generated');link(al,s,'derived_from');
+        const qn=add('qc',qc,{outcome:qc});link(al,qn,'has_qc');al._qc=qn;
+        link(al,box,'stored_at');
+        const platK=m==='DNA'?'CG':(mroot==='RNA'?'GX':(m==='Peptide'?'MS':null));
+        if(platK&&qc==='pass'&&reached>=6)link(al,platforms[platK],'submitted_to');
+        local.push({node:al,mol:mroot,qc:qc});
+      });
+      const fr=local.find(a=>a.mol==='RNA'&&a.qc==='fail');
+      if(fr){const ok=rnd()<.7;
+        const rep=add('aliquot','RNA v2',{mol:'RNA',molLabel:'RNA v2',qc:ok?'pass':'fail'});
+        link(act,rep,'generated');link(rep,s,'derived_from');link(rep,fr.node,'repeat_of');
+        const qn=add('qc',ok?'pass':'fail',{outcome:ok?'pass':'fail'});link(rep,qn,'has_qc');rep._qc=qn;
+        link(rep,box,'stored_at'); if(ok&&reached>=6)link(rep,platforms.GX,'submitted_to');
+        local.push({node:rep,mol:'RNA',qc:ok?'pass':'fail'});}
+      s._alis=local.map(a=>a.node);
+    }
+    if(reached>=8)link(s,mtb,'has_mtb');
+  }
+}
+sampleNodes.forEach(s=>{
+  s._hasFail=s._alis.some(a=>a.qc==='fail');
+  s._hasRepeat=s._alis.some(a=>edges.some(e=>e.type==='repeat_of'&&e.a===a.id));
+  s._pending=s._alis.some(a=>a.qc==='pending');
+  s._incomplete=(s.stype==='Blood');
+  s._stuck=(s.reached<3)||(s.reached>=4&&s.reached<7&&rnd()<.5);
+});
+
+document.getElementById('ncount').textContent=nodes.length;
+document.getElementById('ecount').textContent=edges.length;
+
+/* --- adjacency + closures --- */
+const adj={}; nodes.forEach(n=>adj[n.id]=[]);
+edges.forEach(e=>{adj[e.a].push({o:e.b,t:e.type,dir:'out'});adj[e.b].push({o:e.a,t:e.type,dir:'in'});});
+function aliquotClosure(aid){const set=new Set([aid]);
+  adj[aid].forEach(x=>{
+    if(x.t==='derived_from'&&x.dir==='out'){set.add(x.o);
+      adj[x.o].forEach(y=>{if(y.t==='has_sample'&&y.dir==='in')set.add(y.o);});}
+    if(x.t==='has_qc')set.add(x.o);
+    if(x.t==='submitted_to')set.add(x.o);
+    if(x.t==='repeat_of')set.add(x.o);
+    if(x.t==='stored_at'){set.add(x.o);adj[x.o].forEach(z=>{if(z.t==='contains'&&z.dir==='in')set.add(z.o);});}
+  });return set;}
+function sampleClosure(sid){const set=new Set([sid]);
+  adj[sid].forEach(x=>{
+    if(x.t==='has_sample'&&x.dir==='in')set.add(x.o);
+    if(x.t==='identified_as'&&x.dir==='out')set.add(x.o);
+    if(x.t==='has_deviation'&&x.dir==='out')set.add(x.o);
+    if(x.t==='has_mtb'&&x.dir==='out')set.add(x.o);
+    if(x.t==='used'&&x.dir==='in'){set.add(x.o);adj[x.o].forEach(y=>{if(y.t==='performed'&&y.dir==='in')set.add(y.o);});}
+    if(x.t==='derived_from'&&x.dir==='in')aliquotClosure(x.o).forEach(y=>set.add(y));
+  });return set;}
+function boxClosure(bid){const set=new Set([bid]);
+  adj[bid].forEach(x=>{ if(x.t==='contains'&&x.dir==='in')set.add(x.o);
+    if(x.t==='stored_at'&&x.dir==='in')aliquotClosure(x.o).forEach(y=>set.add(y));});
+  return set;}
+
+/* --- state --- */
+let gFacet={sex:{F:1,M:1},age:{'<65':1,'65-74':1,'75+':1},stype:{'FFPE':1,'Fresh-Frozen':1,'Blood':1},mol:{DNA:1,RNA:1,Protein:1},
+  qc:{pass:1,fail:1},plat:{'Clinical Genomics':1,'Genomics Express':1,'Clinical Proteomics':1},
+  ntype:{patient:1,sample:1,aliquot:1,platform:1,mtb:1,deviation:1,identifier:0,qc:0,storage:0,activity:0,operator:0}};
+let gHiSet=null, gHiMode=null, gFocus=null, selNode=null, gExpand=null;
+
+function setHighlight(mode){gFocus=null;gExpand=null;selNode=null;
+  if(gHiMode===mode||!mode){gHiMode=null;gHiSet=null;syncLayers();return;}
+  gHiMode=mode;const set=new Set();
+  if(mode==='fail')nodes.forEach(n=>{if(n.type==='aliquot'&&n.qc==='fail')aliquotClosure(n.id).forEach(x=>set.add(x));});
+  if(mode==='repeat')nodes.forEach(n=>{if(n.type==='aliquot'&&edges.some(e=>e.type==='repeat_of'&&e.a===n.id))aliquotClosure(n.id).forEach(x=>set.add(x));});
+  if(mode==='blood')sampleNodes.forEach(s=>{if(s._incomplete)sampleClosure(s.id).forEach(x=>set.add(x));});
+  if(mode==='stalled')sampleNodes.forEach(s=>{if(s._stuck)sampleClosure(s.id).forEach(x=>set.add(x));});
+  if(mode==='deviation'){gFacet.ntype.deviation=1;nodes.forEach(n=>{if(n.type==='deviation'){set.add(n.id);const s=adj[n.id].find(x=>x.t==='has_deviation'&&x.dir==='in');if(s)sampleClosure(s.o).forEach(x=>set.add(x));}});}
+  if(mode==='incident'){gFacet.ntype.storage=1;const box=boxes['B-3'];boxClosure(box.id).forEach(x=>set.add(x));}
+  if(mode==='shared'){gFacet.ntype.operator=1;gFacet.ntype.activity=1;
+    nodes.forEach(n=>{if(n.type==='aliquot'&&n.qc==='fail')aliquotClosure(n.id).forEach(x=>set.add(x));});
+    nodes.forEach(n=>{if(n.type==='operator')set.add(n.id);});}
+  gHiSet=set;syncLayers();}
+function nodePass(n){
+  if(!gFacet.ntype[n.type])return false;
+  if(n.type==='patient'){if(n.sex&&gFacet.sex[n.sex]===0)return false;if(gFacet.age[ageBucket(n.age)]===0)return false;}
+  if(n.type==='sample'){if(gFacet.stype[n.stype]===0)return false;
+    if(n._psex&&gFacet.sex[n._psex]===0)return false;if(n._page!=null&&gFacet.age[ageBucket(n._page)]===0)return false;}
+  if(n.type==='platform'&&gFacet.plat[n.label]===0)return false;
+  if(n.type==='aliquot'){if(n.qc&&gFacet.qc[n.qc]===0)return false;if(n.mol&&gFacet.mol[n.mol]===0)return false;}
+  return true;}
+function visN(n){
+  if(gFocus)return gFocus.has(n.id)?1:0.05;
+  if(gExpand){if(!gFacet.ntype[n.type])return 0;return gExpand.has(n.id)?1:0.06;}
+  if(!gFacet.ntype[n.type])return 0;
+  if(gHiSet)return gHiSet.has(n.id)?1:0.07;
+  return nodePass(n)?1:0.10;}
+function visE(e){const na=nodes[e.a],nb=nodes[e.b];
+  if(gFocus)return (gFocus.has(e.a)&&gFocus.has(e.b))?1:0.02;
+  if(gExpand){if(!gFacet.ntype[na.type]||!gFacet.ntype[nb.type])return 0;return (gExpand.has(e.a)&&gExpand.has(e.b))?1:0.03;}
+  if(!gFacet.ntype[na.type]||!gFacet.ntype[nb.type])return 0;
+  if(gHiSet)return (gHiSet.has(e.a)&&gHiSet.has(e.b))?1:0.04;
+  return (nodePass(na)&&nodePass(nb))?1:0.05;}
+
+const chipMap={'QC failures':'fail','Stalled':'stalled','Repeats':'repeat','Blood-only':'blood','Deviations':'deviation'};
+function syncChips(){document.querySelectorAll('aside.left .chips .chip').forEach(ch=>
+  ch.classList.toggle('on', gHiMode!==null && chipMap[ch.textContent.trim()]===gHiMode));}
+function syncLayers(){document.querySelectorAll('aside.left input[data-ly]').forEach(cb=>{cb.checked=!!gFacet.ntype[cb.dataset.ly];});}
+function switchToTab(v){const b=document.querySelector('nav.tabs button[data-view="'+v+'"]');if(b)b.click();}
+function idChainOf(s){return adj[s.id].filter(x=>x.t==='identified_as'&&x.dir==='out').map(x=>nodes[x.o]);}
+function focusFor(n){
+  if(n.type==='sample')return sampleClosure(n.id);
+  if(n.type==='aliquot')return aliquotClosure(n.id);
+  if(n.type==='identifier'||n.type==='deviation'){const s=adj[n.id].find(x=>(x.t==='identified_as'||x.t==='has_deviation')&&x.dir==='in');return s?sampleClosure(s.o):null;}
+  if(n.type==='qc'){const a=adj[n.id].find(x=>x.t==='has_qc'&&x.dir==='in');return a?aliquotClosure(a.o):null;}
+  if(n.type==='storage'&&n.kind==='box')return boxClosure(n.id);
+  if(n.type==='activity'){const s=adj[n.id].find(x=>x.t==='used'&&x.dir==='out');return s?sampleClosure(s.o):null;}
+  return null;}
+function kv(k,v){return '<div class="kv"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';}
+function renderInspector(n){
+  const kind=document.getElementById('selkind'),title=document.getElementById('seltitle'),det=document.getElementById('seldetail');
+  if(!n){kind.textContent='Selected · —';title.textContent='Nothing selected';
+    det.innerHTML='<p class="hint"><b>Click</b> a node to inspect it and light its full provenance — including the ID and storage layers even when toggled off. <b>Double-click</b> to expand outward one hop at a time (through the node types you have switched on). Or try a use-case view on the left.</p>';return;}
+  kind.textContent=ONT[n.type]||n.type;
+  title.textContent=n.label+(n.stype?' · '+n.stype:'')+(n.type==='aliquot'&&n.molLabel?' · '+n.molLabel:'');
+  let h='';
+  if(n.type==='patient'){h+=kv('Semantic type',ONT.patient)+kv('Sex',n.sex==='F'?'Female':'Male')+kv('Age at enrolment',n.age)+kv('Consent',n.consent?'yes':'no');
+    const ss=adj[n.id].filter(x=>x.t==='has_sample'&&x.dir==='out').map(x=>nodes[x.o].label);h+=kv('Specimens',ss.join(', ')||'—');}
+  if(n.type==='sample'){
+    const pat=(adj[n.id].filter(x=>x.t==='has_sample'&&x.dir==='in').map(x=>nodes[x.o].label)[0])||'—';
+    const status=n._stuck?'<span class="badge fail">stalled</span>':n._hasFail?'<span class="badge fail">QC failure</span>':n._pending?'<span class="badge pending">QC pending</span>':'<span class="badge pass">on track</span>';
+    h+=kv('Semantic type',ONT.sample)+kv('Patient',pat)+kv('Preservation',n.stype)+kv('Status',status);
+    if(n._act){const opn=adj[n._act.id].filter(x=>x.t==='performed'&&x.dir==='in').map(x=>nodes[x.o].label)[0];h+=kv('Prep operator',opn||'—');}
+    h+='<p class="panel-title" style="margin-top:12px">Cross-system ID chain <span style="font-weight:400;color:var(--muted)">— WP2 deliverable</span></p>';
+    idChainOf(n).forEach(idn=>{h+='<div class="kv"><span class="k">'+idn.system+'</span><span class="v" style="font-family:ui-monospace,Menlo,monospace">'+idn.value+'</span></div>';});
+    const devs=adj[n.id].filter(x=>x.t==='has_deviation'&&x.dir==='out').map(x=>nodes[x.o].label);
+    if(devs.length)h+='<p class="panel-title" style="margin-top:12px">Deviations</p>'+devs.map(d=>kv(d,'⚠ recorded')).join('');
+    if(n._alis.length){h+='<p class="panel-title" style="margin-top:12px">Aliquots &amp; QC</p>';
+      n._alis.forEach(a=>{h+=kv(a.molLabel,'<span class="badge '+(a.qc==='fail'?'fail':a.qc==='pending'?'pending':'pass')+'">'+a.qc+'</span>');});}
+    h+=kv('Storage box',n.box);
+  }
+  if(n.type==='aliquot'){
+    const sm=(adj[n.id].filter(x=>x.t==='derived_from'&&x.dir==='out').map(x=>nodes[x.o])[0]);
+    const pl=(adj[n.id].filter(x=>x.t==='submitted_to').map(x=>nodes[x.o].label)[0]);
+    const box=(adj[n.id].filter(x=>x.t==='stored_at').map(x=>nodes[x.o].label)[0]);
+    h+=kv('Semantic type',ONT.aliquot)+kv('Molecule',n.molLabel||n.mol)+kv('From specimen',sm?sm.label:'—')+
+       kv('QC','<span class="badge '+(n.qc==='fail'?'fail':n.qc==='pending'?'pending':'pass')+'">'+n.qc+'</span>')+
+       kv('Platform',pl||'— not submitted')+kv('Storage box',box||'—');
+    if(n.molLabel&&n.molLabel.indexOf(' v')>=0)h+=kv('Note','repeat extraction');
+    h+='<p class="hint" style="margin-top:10px">QC in this schema = concentration + total yield + Pass/Fail. It does not record RIN or 260/280.</p>';
+  }
+  if(n.type==='identifier')h+=kv('Semantic type',ONT.identifier)+kv('Scheme',n.scheme)+kv('Issuing system',n.system)+kv('Value',n.value)+'<p class="hint" style="margin-top:10px">Re-connecting these five per-system IDs into one chain is the WP2 deliverable.</p>';
+  if(n.type==='qc')h+=kv('Semantic type',ONT.qc)+kv('Outcome',n.outcome)+'<p class="hint" style="margin-top:10px">Metric is concentration + total yield, not RIN/260-280 (this REDCap does not record those).</p>';
+  if(n.type==='deviation')h+=kv('Semantic type',ONT.deviation)+kv('Class',n.devtype)+'<p class="hint" style="margin-top:10px">One of four deviation classes recorded at pathology: timing · temperature · handling · labelling.</p>';
+  if(n.type==='activity'){const opn=adj[n.id].filter(x=>x.t==='performed'&&x.dir==='in').map(x=>nodes[x.o].label)[0];
+    const gen=adj[n.id].filter(x=>x.t==='generated').length;
+    h+=kv('Semantic type',ONT.activity)+kv('Kind',n.kind)+kv('Operator',opn||'—')+kv('Aliquots generated',gen)+'<p class="hint" style="margin-top:10px">PROV-O spine: an Activity USED a specimen and GENERATED aliquots, performed by an Agent.</p>';}
+  if(n.type==='operator'){const acts=adj[n.id].filter(x=>x.t==='performed').length;
+    h+=kv('Semantic type',ONT.operator)+kv('HSA-ID',n.label)+kv('Prep runs',acts);}
+  if(n.type==='platform'){const rec=adj[n.id].filter(x=>x.t==='submitted_to').length;
+    h+=kv('Semantic type',ONT.platform)+kv('Facility',n.label)+kv('Aliquots received',rec);}
+  if(n.type==='mtb')h+=kv('Semantic type',ONT.mtb)+kv('Cases',adj[n.id].filter(x=>x.t==='has_mtb').length);
+  if(n.type==='storage'){h+=kv('Semantic type',ONT.storage)+kv('Kind',n.kind);
+    const contained=adj[n.id].filter(x=>x.t==='stored_at'&&x.dir==='in').length;
+    const children=adj[n.id].filter(x=>x.t==='contains'&&x.dir==='out').length;
+    if(n.kind==='box'){h+=kv('Aliquots inside',contained);
+      const cl=boxClosure(n.id);let sp=0,pt=new Set(),dv=0;cl.forEach(id=>{if(nodes[id].type==='sample')sp++;if(nodes[id].type==='patient')pt.add(id);if(nodes[id].type==='mtb')dv++;});
+      h+=kv('Specimens affected',sp)+kv('Patients affected',pt.size)+(dv?kv('Results at MTB','⚠ '+dv):'');
+      h+='<button id="btnimpact" data-b="'+n.id+'" style="width:100%;border:1px solid var(--fail);background:var(--fail);color:#fff;border-radius:8px;padding:9px;font:inherit;font-weight:600;cursor:pointer;margin-top:12px">Impact analysis — light everything in this box →</button>';}
+    else h+=kv('Contains',children+' locations');}
+  det.innerHTML=h;
+  const bi=document.getElementById('btnimpact');
+  if(bi)bi.addEventListener('click',()=>{gFacet.ntype.storage=1;gFocus=boxClosure(+bi.dataset.b);gExpand=null;gHiSet=null;gHiMode=null;selNode=nodes[+bi.dataset.b];syncLayers();syncChips();});
+}
+function selectGraphNode(n){selNode=n;gHiSet=null;gHiMode=null;gExpand=null;
+  gFocus=focusFor(n);
+  if(n.type==='sample'){gFacet.ntype.identifier=1;gFacet.ntype.storage=1;}
+  if(n.type==='storage'&&n.kind==='box')gFacet.ntype.storage=1;
+  syncChips();syncLayers();renderInspector(n);}
+/* double-click: grow a one-hop neighbourhood outward from the clicked node
+   (only across node types whose layer is currently on) */
+function expandNode(n){selNode=n;gFocus=null;gHiSet=null;gHiMode=null;
+  if(!gExpand)gExpand=new Set();
+  gExpand.add(n.id);
+  adj[n.id].forEach(x=>{if(gFacet.ntype[nodes[x.o].type])gExpand.add(x.o);});
+  syncChips();syncLayers();renderInspector(n);}
+
+/* ---- layout target positions ---- */
+const layeredCols={study:0,patient:1,identifier:1,sample:2,activity:2,deviation:2,aliquot:3,qc:3,platform:4,storage:4,mtb:5};
+function hexA(h,a){const n=parseInt(h.slice(1),16);return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';}
+function computeTargets(){
+  const byCol={};
+  nodes.forEach(n=>{if(n.type==='operator')return;const c=layeredCols[n.type]!=null?layeredCols[n.type]:2;(byCol[c]=byCol[c]||[]).push(n);});
+  Object.keys(byCol).forEach(c=>{const arr=byCol[c].sort((a,b)=>a.id-b.id),N=arr.length;
+    arr.forEach((n,i)=>{n.lx=(c-2.5)*120;n.ly=N>1?(-260+520*i/(N-1)):0;n.lz=0;});});
+  const opn=nodes.filter(n=>n.type==='operator').sort((a,b)=>a.id-b.id);
+  opn.forEach((n,i)=>{n.lx=-160+320*(i/((opn.length-1)||1));n.ly=315;n.lz=0;});
+  const types=['study','patient','identifier','sample','activity','operator','aliquot','qc','deviation','platform','storage','mtb'],cen={};
+  types.forEach((t,i)=>{const a=i/types.length*6.283;cen[t]={x:Math.cos(a)*280,y:Math.sin(a)*280};});
+  const cnt={};
+  nodes.forEach(n=>{const k=(cnt[n.type]=(cnt[n.type]||0));cnt[n.type]++;
+    const r=13*Math.sqrt(k),ang=k*2.399,c=cen[n.type]||{x:0,y:0};
+    n.gx=c.x+Math.cos(ang)*r;n.gy=c.y+Math.sin(ang)*r;n.gz=(rnd()-.5)*40;});
+}
+computeTargets();
+let layout=nodes.length>300?'layered':'force';   // large cohort: layered (O(n)) instead of force (O(n²))
+let spin=true;
+document.querySelectorAll('.layoutsw button').forEach(b=>b.classList.toggle('on',b.dataset.l===layout));
+document.querySelectorAll('.layoutsw button').forEach(btn=>btn.addEventListener('click',()=>{
+  document.querySelectorAll('.layoutsw button').forEach(b=>b.classList.toggle('on',b===btn));
+  layout=btn.dataset.l;
+  if(layout==='force')nodes.forEach(n=>{n.vx=n.vy=n.vz=0;});
+}));
+(function(){const sb=document.getElementById('spinBtn'); if(!sb)return;
+  sb.addEventListener('click',()=>{spin=!spin;sb.textContent=spin?'⏸ Rotation':'▶ Rotation';sb.classList.toggle('off',!spin);});})();
+
+const cv=document.getElementById('graph'), ctx=cv.getContext('2d');
+let W=0,H=0,cx=0,cy=0,dpr=Math.min(2,window.devicePixelRatio||1);
+let rotY=0,rotX=-.25,dragging=false,lastX,lastY,camDist=760,autov=0.0032;
+function resize(){const wrap=cv.parentElement;W=wrap.clientWidth;H=wrap.clientHeight;
+  cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);cx=W/2;cy=H/2;}
+window.addEventListener('resize',resize);
+
+cv.addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;});
+window.addEventListener('mouseup',()=>dragging=false);
+window.addEventListener('mousemove',e=>{
+  if(dragging){rotY+=(e.clientX-lastX)*.008;rotX+=(e.clientY-lastY)*.008;
+    rotX=Math.max(-1.4,Math.min(1.4,rotX));lastX=e.clientX;lastY=e.clientY;}
+  hover(e);
+});
+cv.addEventListener('wheel',e=>{e.preventDefault();camDist=Math.max(360,Math.min(1500,camDist+e.deltaY*.6));},{passive:false});
+
+// physics
+function tick(){
+  for(let i=0;i<nodes.length;i++){const a=nodes[i];
+    for(let j=i+1;j<nodes.length;j++){const b=nodes[j];
+      let dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;let d2=dx*dx+dy*dy+dz*dz+.01;let d=Math.sqrt(d2);
+      let f=Math.min(2.2,2600/d2); f/=d;
+      a.vx+=dx*f;a.vy+=dy*f;a.vz+=dz*f;b.vx-=dx*f;b.vy-=dy*f;b.vz-=dz*f;}}
+  for(const e of edges){const a=nodes[e.a],b=nodes[e.b];
+    let dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z;let d=Math.sqrt(dx*dx+dy*dy+dz*dz)+.01;
+    let f=(d-70)*.012/d; a.vx+=dx*f;a.vy+=dy*f;a.vz+=dz*f;b.vx-=dx*f;b.vy-=dy*f;b.vz-=dz*f;}
+  for(const n of nodes){
+    n.vx-=n.x*.0016;n.vy-=n.y*.0016;n.vz-=n.z*.0016;         // gravity to center
+    n.vx*=.86;n.vy*=.86;n.vz*=.86;
+    n.x+=Math.max(-6,Math.min(6,n.vx));n.y+=Math.max(-6,Math.min(6,n.vy));n.z+=Math.max(-6,Math.min(6,n.vz));
+    const r=Math.sqrt(n.x*n.x+n.y*n.y+n.z*n.z);const R=360;if(r>R){const k=R/r;n.x*=k;n.y*=k;n.z*=k;}
+  }
+}
+function project(n){
+  const cyR=Math.cos(rotY),syR=Math.sin(rotY),cxR=Math.cos(rotX),sxR=Math.sin(rotX);
+  let x=n.x*cyR - n.z*syR, z=n.x*syR + n.z*cyR, y=n.y*cxR - z*sxR; z=n.y*sxR + z*cxR;
+  const zc=z+camDist, scale=680/zc;
+  return {sx:cx+x*scale, sy:cy+y*scale, scale, zc};
+}
+let hoverNode=null;
+function hover(e){
+  const rect=cv.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  let best=null,bd=1e9;
+  for(const n of nodes){if(n._sx==null)continue;const dx=n._sx-mx,dy=n._sy-my;const d=dx*dx+dy*dy;
+    const rr=(RAD[n.type]*n._sc+6);if(d<rr*rr&&d<bd){bd=d;best=n;}}
+  hoverNode=best;const tip=document.getElementById('tip');
+  if(best){tip.style.display='block';tip.style.left=(mx+14)+'px';tip.style.top=(my+12)+'px';
+    tip.querySelector('.t').textContent=best.label+(best.stype?' · '+best.stype:'')+(best.mol&&best.type==='aliquot'?' · '+best.mol:'');
+    tip.querySelector('.s').textContent=best.type+(best.qc?' · QC '+best.qc:'')+(best.sex?' · '+best.sex:'');
+  } else tip.style.display='none';
+}
+/* single-click selects (traces provenance); double-click expands one hop.
+   The single-click is deferred ~220 ms so a double-click can cancel it. */
+let clickTimer=null;
+cv.addEventListener('click',()=>{
+  if(clickTimer){clearTimeout(clickTimer);clickTimer=null;}
+  if(!hoverNode){selNode=null;gFocus=null;gExpand=null;renderInspector(null);return;}
+  const n=hoverNode;
+  clickTimer=setTimeout(()=>{clickTimer=null;selectGraphNode(n);},220);
+});
+cv.addEventListener('dblclick',()=>{
+  if(clickTimer){clearTimeout(clickTimer);clickTimer=null;}
+  if(hoverNode)expandNode(hoverNode);
+});
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  const P=nodes.map(project);nodes.forEach((n,i)=>{n._sx=P[i].sx;n._sy=P[i].sy;n._sc=P[i].scale;n._zc=P[i].zc;});
+  if(layout==='grouped'){ // translucent labelled hull behind each type-cluster (visible types only)
+    const g={};nodes.forEach((n,i)=>{if(visN(n)<=0)return;(g[n.type]=g[n.type]||[]).push(P[i]);});
+    for(const t in g){const ps=g[t];let mx=0,my=0;ps.forEach(p=>{mx+=p.sx;my+=p.sy;});mx/=ps.length;my/=ps.length;
+      let r=0,asc=0;ps.forEach(p=>{r=Math.max(r,Math.hypot(p.sx-mx,p.sy-my));asc+=p.scale;});asc/=ps.length;r+=24*asc;
+      ctx.fillStyle=hexA(COLORS[t],0.10);ctx.strokeStyle=hexA(COLORS[t],0.45);ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(mx,my,r,0,7);ctx.fill();ctx.stroke();
+      ctx.fillStyle=COLORS[t];ctx.font='600 12px system-ui';ctx.textAlign='center';
+      ctx.fillText(t.toUpperCase(),mx,my-r-6);}
+  }
+  // edges
+  ctx.lineWidth=1;
+  for(const e of edges){const ve=visE(e); if(ve<=0)continue; const a=P[e.a],b=P[e.b];const dep=(a.zc+b.zc)/2;
+    const al=Math.max(.02,Math.min(.45,900/dep-.3)*ve);
+    if(e.type==='repeat_of'){ctx.strokeStyle='rgba(231,111,81,'+Math.min(.8,al+.3)+')';ctx.lineWidth=1.6;}
+    else{ctx.strokeStyle='rgba(150,175,210,'+al+')';ctx.lineWidth=1;}
+    ctx.beginPath();ctx.moveTo(a.sx,a.sy);ctx.lineTo(b.sx,b.sy);ctx.stroke();}
+  // nodes back-to-front
+  const order=[...nodes.keys()].sort((i,j)=>P[j].zc-P[i].zc);
+  for(const i of order){const n=nodes[i],p=P[i];const r=Math.max(1.4,RAD[n.type]*p.scale);
+    const vv=visN(n); if(vv<=0)continue;
+    const fog=Math.max(.25,Math.min(1,900/p.zc-.15))*vv;
+    ctx.globalAlpha=fog;ctx.shadowColor=COLORS[n.type];ctx.shadowBlur=hoverNode===n?22:(vv>.5?12:5);
+    ctx.fillStyle=COLORS[n.type];
+    ctx.beginPath();ctx.arc(p.sx,p.sy,r,0,7);ctx.fill();
+    if(n.qc==='fail'){ctx.shadowBlur=0;ctx.lineWidth=2;ctx.strokeStyle='#e76f51';ctx.beginPath();ctx.arc(p.sx,p.sy,r+2.5,0,7);ctx.stroke();}
+    if(hoverNode===n){ctx.shadowBlur=0;ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(p.sx,p.sy,r+3,0,7);ctx.stroke();}
+    if(selNode===n){ctx.globalAlpha=1;ctx.shadowBlur=0;ctx.lineWidth=2.5;ctx.strokeStyle='#2a9d8f';ctx.beginPath();ctx.arc(p.sx,p.sy,r+5,0,7);ctx.stroke();}
+  }
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+  // labels for hubs + hovered
+  ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillStyle='#dbe4f0';
+  for(const i of order){const n=nodes[i],p=P[i];
+    if(n.type==='platform'||hoverNode===n){
+      ctx.fillStyle=hoverNode===n?'#fff':'#c3d0e2';
+      ctx.fillText(n.label,p.sx,p.sy-RAD[n.type]*p.scale-6);}}
+  if(layout==='layered'){ // column headers per pipeline stage (visible layers only)
+    const lbl={1:'PATIENT',2:'SPECIMEN',3:'ALIQUOT',4:'PLATFORM',5:'MTB'},cols={};
+    nodes.forEach((n,i)=>{if(n.type==='operator'||visN(n)<=0)return;const c=layeredCols[n.type];(cols[c]=cols[c]||[]).push(P[i].sx);});
+    ctx.fillStyle='#9fb0c9';ctx.font='600 12px system-ui';ctx.textAlign='center';
+    for(const c in cols){if(!lbl[c])continue;const xs=cols[c],mx=xs.reduce((a,b)=>a+b,0)/xs.length;ctx.fillText(lbl[c],mx,20);}
+    if(gFacet.ntype.operator)ctx.fillText('OPERATORS',cx,H-12);
+  }
+}
+function loop(){
+  if(layout==='force'){ if(!dragging&&spin)rotY+=autov; tick(); }
+  else{
+    const k=layout==='layered'?'l':'g';                       // ease toward the layout's targets
+    for(const n of nodes){n.x+=(n[k+'x']-n.x)*.09;n.y+=(n[k+'y']-n.y)*.09;n.z+=(n[k+'z']-n.z)*.09;}
+    if(!dragging){
+      if(layout==='layered'){rotY+=(0-rotY)*.08;rotX+=(-0.05-rotX)*.08;}   // face forward
+      else if(spin){rotY+=autov*.6;}                                       // grouped: gentle spin
+    }
+  }
+  draw();requestAnimationFrame(loop);
+}
+resize();loop();
+</script>
+
+<script>
+/* ---------------- Journey (step-by-step, timed) ---------------- */
+(function(){
+  const STAGES=[
+    {name:'Patient consent',short:'Consent',phase:'preop',loc:'Alltid Öppet / Nybesök LOC',system:'',actor:'Enrolling oncologist',id:'Study ID (pseudonymised)',dur:0,durnote:'patient visit',desc:'The research subject signs informed consent and is enrolled in the study.'},
+    {name:'Register consent in TakeCare',short:'TakeCare',phase:'preop',loc:'Karolinska (K)',system:'TakeCare (EHR)',actor:'Study staff',id:'',dur:15,desc:'Consent forms are registered in TakeCare against the Study ID.'},
+    {name:'Schedule in Orbit',short:'Orbit',phase:'preop',loc:'K',system:'Orbit',actor:'Study staff',id:'',dur:30,desc:'Check the surgery schedule and mark the case in the Orbit system.'},
+    {name:'Book transport',short:'Transport',phase:'logistics',loc:'Transport company',system:'',actor:'Coordinator',id:'',dur:10,desc:'Contact the transport company and inform them about ice bags for the pickup day.'},
+    {name:'Pack transport bag',short:'CCK packing',phase:'logistics',loc:'CCK',system:'',actor:'CCK staff',id:'',dur:15,desc:'Pack the transport bags with ice and a temperature logger.'},
+    {name:'Surgery',short:'Surgery',phase:'surgery',loc:'Operating room',system:'',actor:'Surgeon',id:'',dur:15,desc:'Tumour tissue is placed in a designated can and into the transport bag.'},
+    {name:'Pathology — cut & rack',short:'Pathology',phase:'pathology',loc:'Pathology dept',system:'',actor:'Pathologist',id:'PAD number',dur:15,desc:'The pathologist cuts tissue pieces, marks the tubes, and places them in the PreDDLung tube rack (-80 °C).'},
+    {name:'Register in Labware',short:'Labware',phase:'pathology',loc:'Pathology dept',system:'Labware (LIMS)',actor:'Pathology staff',id:'Biobank tube barcode',dur:10,desc:'Samples are registered in Labware together with the remiss (referral).'},
+    {name:'Store at -80 °C',short:'-80 store',phase:'logistics',loc:'Pathology -80 freezer',system:'',actor:'',id:'',dur:5,desc:'Samples are placed in -80 °C in the marked PreDDLung rack.'},
+    {name:'Pickup & cleaning',short:'Pickup',phase:'logistics',loc:'Pathology / CCK',system:'',actor:'CCK staff',id:'',dur:30,desc:'Pick up the Study Remiss and ice bag; clean the bag and temperature logger.'},
+    {name:'Move to CCK freezer',short:'Fryshotellet',phase:'logistics',loc:'→ CCK freezer A0',system:'',actor:'',id:'',dur:8,durnote:'5–10 min',desc:'PreDDLung samples are moved from the Pathology freezer to CCK freezer A0.'},
+    {name:'Withdraw for prep (UTTAG)',short:'UTTAG',phase:'pmsclab',loc:'CCK',system:'',actor:'PMSC operator',id:'',dur:20,desc:'Withdraw tissue samples to be cryo-prepped (kept on dry ice).'},
+    {name:'Cryo prep',short:'Cryo prep',phase:'pmsclab',loc:'CCK LAB',system:'',actor:'Operator (HSA-ID)',id:'PMSC ID',dur:10,desc:'Cryopulverization — frozen tissue is ground to a fine powder to homogenise it before extraction.'},
+    {name:'AllPrep extraction',short:'AllPrep',phase:'pmsclab',loc:'CCK LAB',system:'',actor:'Operator (HSA-ID)',id:'PMSC-ID-DNA / -RNA',dur:135,durnote:'2–2.5 h',desc:'The Qiagen AllPrep kit co-extracts DNA, RNA and protein from the one sample, splitting it into three fractions.',note:'⎇ Branch point — the sample now splits into DNA / RNA / Protein fractions that proceed in parallel.'},
+    {name:'Concentration & QC',short:'Conc + QC',phase:'pmsclab',loc:'CCK LAB',system:'',actor:'Operator',id:'',dur:60,desc:'Concentration measured by Qubit (DNA/RNA) and Bradford/Qubit (protein); each fraction gets a QC Pass/Fail.',note:'A failed RNA QC can trigger a repeat extraction (repeat_of), preserved in the graph.'},
+    {name:'Platform analysis',short:'Platforms',phase:'analysis',loc:'SciLifeLab',system:'Clinical Genomics · Genomics Express · Clinical Proteomics',actor:'Platform staff',id:'SciLL running number',dur:3960,durnote:'60–72 h',desc:'DNA/RNA → Clinical Genomics / Genomics Express; Protein → Clinical Proteomics mass spec (TimsTOF / Astral).'},
+    {name:'Data analysis',short:'Data analysis',phase:'analysis',loc:'Bioinformatics / proteomics',system:'',actor:'Analysts',id:'',dur:2160,durnote:'24–48 h',desc:'Sequencing and mass-spec data are processed and analysed.'},
+    {name:'Molecular Tumor Board',short:'MTBP',phase:'decision',loc:'MTB Portal',system:'MTBP',actor:'Clinicians',id:'',dur:0,durnote:'meeting',desc:'Results are reviewed in the Molecular Tumor Board Portal to guide the treatment decision — the end of the journey.'}
+  ];
+  const PH={preop:['Pre-op','#457b9d'],surgery:['Surgery','#e76f51'],pathology:['Pathology','#264653'],
+    logistics:['Logistics','#8d99ae'],pmsclab:['PMSC lab','#2a9d8f'],analysis:['Analysis','#6a4c93'],decision:['Decision','#e9c46a']};
+  let c=0; STAGES.forEach(s=>{s.cum=(c+=s.dur);});
+  const total=c, handsOn=STAGES.filter(s=>s.phase!=='analysis').reduce((a,s)=>a+s.dur,0);
+  function fmt(m){if(m<=0)return '—';if(m<60)return m+' min';if(m<1440){const h=m/60;return (h%1?h.toFixed(1):h)+' h';}return (m/1440).toFixed(1)+' days';}
+  let sel=0,timer=null,built=false;
+  const $=id=>document.getElementById(id);
+  const LANES=[['coord','Study coordination · K'],['or','Surgery · OR'],['path','Pathology'],
+    ['log','Logistics · biobank'],['pmsc','PMSC lab · CCK'],['scDNA','SciLifeLab · DNA'],
+    ['scRNA','SciLifeLab · RNA'],['scProt','SciLifeLab · Protein'],['mtb','Analysis & MTB']];
+  const LANEIDX={}; LANES.forEach((l,i)=>{LANEIDX[l[0]]=i;});
+  const STAGELANE={0:'coord',1:'coord',2:'coord',3:'coord',4:'coord',5:'or',6:'path',7:'path',8:'path',
+    9:'log',10:'log',11:'pmsc',12:'pmsc',13:'pmsc',14:'pmsc',16:'mtb',17:'mtb'};
+  const PLAT=[['scDNA','Clinical Genomics'],['scRNA','Genomics Express'],['scProt','Clinical Proteomics MS']];
+  const AXH=44,LANEH=56,BARH=30;
+  function barW(d){return d<=0?24:Math.max(30,Math.min(200,9*Math.sqrt(d)));}
+  let BARS=[];
+  function buildDOM(){
+    const labs=LANES.map(l=>'<div class="lanelab" title="'+l[1]+'">'+l[1]+'</div>').join('');
+    $('jrail').innerHTML='<div class="swim"><div class="lanescol"><div class="sp"></div>'+labs+
+      '</div><div class="tlwrap"><div class="tl" id="jtl"></div></div></div>';
+  }
+  function barTop(lane){return AXH+LANEIDX[lane]*LANEH+6;}
+  function midY(lane){return barTop(lane)+BARH/2;}
+  function layout(){
+    if(!$('jtl'))return;
+    BARS=[]; let x=12;
+    for(let i=0;i<=14;i++){const w=barW(STAGES[i].dur);BARS.push({i,lane:STAGELANE[i],x,w,label:STAGES[i].short,dur:STAGES[i].dur,capped:w>=200});x+=w+8;}
+    const pfX=x,pfW=barW(STAGES[15].dur);
+    PLAT.forEach(pl=>BARS.push({i:15,lane:pl[0],x:pfX,w:pfW,label:pl[1],dur:STAGES[15].dur,capped:pfW>=200}));
+    x=pfX+pfW+8;
+    const dw=barW(STAGES[16].dur);BARS.push({i:16,lane:'mtb',x,w:dw,label:STAGES[16].short,dur:STAGES[16].dur,capped:dw>=200});x+=dw+8;
+    const mw=barW(STAGES[17].dur);BARS.push({i:17,lane:'mtb',x,w:mw,label:STAGES[17].short,dur:STAGES[17].dur});x+=mw+8;
+    const contentW=x+12, contentH=AXH+LANES.length*LANEH;
+    let bands=''; for(let k=0;k<LANES.length;k++){const y=AXH+k*LANEH;
+      if(k%2)bands+='<rect x="0" y="'+y+'" width="'+contentW+'" height="'+LANEH+'" fill="#f7f9fb"/>';
+      bands+='<line x1="0" y1="'+y+'" x2="'+contentW+'" y2="'+y+'" stroke="#eef1f4"/>';}
+    const conn=(x0,l0,x1,l1)=>{const y0=midY(l0),y1=midY(l1),mx=(x0+x1)/2;
+      return '<path d="M'+x0+' '+y0+' C'+mx+' '+y0+' '+mx+' '+y1+' '+x1+' '+y1+'" fill="none" stroke="#aab4bd" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#hoa)"/>';};
+    let conns='';
+    for(let i=1;i<=14;i++){if(STAGELANE[i]!==STAGELANE[i-1]){const a=BARS[i-1],b=BARS[i];conns+=conn(a.x+a.w,a.lane,b.x,b.lane);}}
+    const qc=BARS[14]; PLAT.forEach(pl=>{conns+=conn(qc.x+qc.w,qc.lane,pfX,pl[0]);});
+    const db=BARS.find(b=>b.i===16); PLAT.forEach(pl=>{conns+=conn(pfX+pfW,pl[0],db.x,'mtb');});
+    const svg='<svg class="tlsvg" width="'+contentW+'" height="'+contentH+'"><defs>'+
+      '<marker id="hoa" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">'+
+      '<path d="M0,0 L6,3 L0,6" fill="none" stroke="#aab4bd" stroke-width="1.3"/></marker></defs>'+bands+conns+'</svg>';
+    const ticks=[[BARS[5].x,'surgery · 0 h'],[qc.x+qc.w,'≈'+fmt(STAGES[14].cum)+' → to labs'],
+      [pfX+pfW,'≈'+fmt(STAGES[15].cum)],[db.x+db.w,'≈'+fmt(total)+' → MTB']];
+    const tickHTML=ticks.map(t=>'<div class="axtick" style="left:'+t[0]+'px">'+t[1]+'</div>').join('');
+    const barsHTML=BARS.map(b=>{const ph=PH[STAGES[b.i].phase][1],light=STAGES[b.i].phase==='decision';
+      const tip=(STAGES[b.i].name+' · '+fmt(b.dur)+(STAGES[b.i].durnote?' ('+STAGES[b.i].durnote+')':'')).replace(/"/g,'&quot;');
+      return '<button class="wfbar'+(light?' light':'')+'" data-i="'+b.i+'" title="'+tip+'"'+
+      ' style="left:'+b.x+'px;width:'+b.w+'px;top:'+barTop(b.lane)+'px;background:'+ph+'">'+
+      '<span class="bl">'+b.label+'</span></button>';}).join('');
+    const durHTML=BARS.map(b=>'<div class="wfdur" style="left:'+b.x+'px;width:'+b.w+'px;top:'+
+      (barTop(b.lane)+BARH+2)+'px">'+(b.capped?'≈':'')+fmt(b.dur)+'</div>').join('');
+    const tl=$('jtl'); tl.style.width=contentW+'px'; tl.style.height=contentH+'px';
+    tl.innerHTML=svg+tickHTML+barsHTML+durHTML;
+  }
+  function detailHTML(i){const s=STAGES[i];const kv=(k,v)=>'<div class="kv"><span class="k">'+k+'</span><span class="v">'+(v||'—')+'</span></div>';
+    return '<div class="phase" style="background:'+PH[s.phase][1]+'">'+PH[s.phase][0]+'</div>'+
+      '<h2>'+(i+1)+'. '+s.name+'</h2>'+kv('Location',s.loc)+kv('System',s.system)+kv('Performed by',s.actor)+
+      kv('ID assigned',s.id)+kv('Duration',fmt(s.dur)+(s.durnote?' · '+s.durnote:''))+kv('Elapsed by here',fmt(s.cum))+
+      '<p class="desc">'+s.desc+'</p>'+(s.note?'<div class="note">'+s.note+'</div>':'');}
+  function render(){
+    document.querySelectorAll('#view-journey [data-i]').forEach(b=>b.classList.toggle('active',+b.dataset.i===sel));
+    $('jdetail').innerHTML=detailHTML(sel);
+  }
+  window.initJourney=function(){if(built)return;built=true;
+    buildDOM();
+    $('jphases').innerHTML=Object.values(PH).map(p=>'<span class="pl"><i style="background:'+p[1]+'"></i>'+p[0]+'</span>').join('');
+    $('jtotals').innerHTML='<div class="tot"><span>Active handling</span><b>~'+fmt(handsOn)+'</b></div>'+
+      '<div class="tot"><span>Total elapsed</span><b>~'+fmt(total)+'</b></div>'+
+      '<div class="tnote">Most of the elapsed time is platform analysis (60–72 h) + data analysis (24–48 h) — not hands-on work.</div>';
+    $('jrail').addEventListener('click',e=>{const b=e.target.closest('[data-i]');if(!b)return;sel=+b.dataset.i;render();});
+    layout(); render();
+  };
+  window.relayoutJourney=function(){ if(built) layout(); };
+  window.addEventListener('resize',()=>{ if(built) layout(); });
+  if(document.getElementById('view-journey').classList.contains('active')) initJourney();
+})();
+</script>
+
+<script>
+/* ---------------- demo wiring: layers, dashboard, facets, use-cases, search ---------------- */
+(function(){
+  const TYPEORDER=['patient','identifier','sample','activity','aliquot','qc','deviation','platform','storage','operator','mtb'];
+  const TYPELABEL={patient:'Patient',identifier:'Identifier (ID chain)',sample:'Specimen',activity:'Activity',
+    aliquot:'Aliquot',qc:'QC result',deviation:'Deviation',platform:'Platform',storage:'Storage',operator:'Operator',mtb:'MTB case'};
+  function buildLayers(){
+    const cnt={}; nodes.forEach(n=>cnt[n.type]=(cnt[n.type]||0)+1);
+    document.getElementById('layerbox').innerHTML=TYPEORDER.map(t=>
+      '<label class="chk"><input type="checkbox" data-ly="'+t+'"'+(gFacet.ntype[t]?' checked':'')+
+      '><span class="dot" style="background:'+COLORS[t]+'"></span>'+TYPELABEL[t]+
+      ' <span style="color:var(--muted);margin-left:auto;font-size:11px">'+(cnt[t]||0)+'</span></label>').join('');
+    document.querySelectorAll('#layerbox input[data-ly]').forEach(cb=>cb.addEventListener('change',()=>{
+      gFacet.ntype[cb.dataset.ly]=cb.checked?1:0;gFocus=null;gExpand=null;selNode=null;gHiSet=null;gHiMode=null;syncChips();}));
+  }
+  function computeDash(){
+    const P=nodes.filter(n=>n.type==='patient').length, S=sampleNodes.length,
+          A=nodes.filter(n=>n.type==='aliquot').length,
+          DV=nodes.filter(n=>n.type==='deviation').length,
+          ST=sampleNodes.filter(s=>s._stuck).length;
+    let pass=0,fail=0; nodes.forEach(n=>{if(n.type==='aliquot'){if(n.qc==='pass')pass++;else if(n.qc==='fail')fail++;}});
+    const qc=Math.round(pass/(pass+fail)*100);
+    const K=[[P,'Patients enrolled','Distinct research subjects consented and enrolled in PreDDLung.'],
+      [S,'Specimens','Physical specimens collected — one patient can contribute more than one.'],
+      [A,'Aliquots','DNA / RNA / Protein / Peptide fractions extracted from the specimens; one specimen yields several.'],
+      [qc+'<small>%</small>','QC pass rate','Share of resolved aliquots that passed QC; pending aliquots are excluded.'],
+      [ST,'Stalled samples','Specimens with no progress past the stage they were expected to reach.'],
+      [DV,'Deviations logged','Recorded protocol deviations: timing, temperature, handling or labelling.']];
+    document.getElementById('kpis').innerHTML=K.map(t=>'<div class="card kpi" data-tip="'+t[2]+'"><div class="n">'+t[0]+'</div><div class="l">'+t[1]+'</div></div>').join('');
+    const types=['FFPE','Fresh-Frozen','Blood'],dd={};types.forEach(t=>dd[t]={p:0,f:0});
+    nodes.forEach(n=>{if(n.type==='aliquot'){const e=adj[n.id].filter(x=>x.t==='derived_from'&&x.dir==='out')[0];
+      if(e){const t=nodes[e.o].stype;if(t&&n.qc!=='pending'){if(n.qc==='fail')dd[t].f++;else dd[t].p++;}}}});
+    const mx=Math.max(1,dd.FFPE.p+dd.FFPE.f,dd['Fresh-Frozen'].p+dd['Fresh-Frozen'].f,dd.Blood.p+dd.Blood.f);
+    document.getElementById('qcbars').innerHTML=types.map(t=>{const d=dd[t],tot=d.p+d.f,
+      pf=tot?d.p/tot*100:0,ff=tot?d.f/tot*100:0;
+      return '<div class="qcrow"><span class="qcname">'+t+'</span>'+
+        '<span class="qctrack"><span class="p" style="width:'+pf+'%"></span><span class="f" style="width:'+ff+'%"></span></span>'+
+        '<span class="qcnum">'+(tot?d.p+' pass · '+d.f+' fail':'no data')+'</span></div>';}).join('');
+    drawSankey();
+  }
+  function drawSankey(){
+    const host=document.getElementById('sankey'); if(!host)return;
+    const S=sampleNodes.length;
+    const cR=k=>sampleNodes.filter(s=>s.reached>=k).length;
+    const cCoord=S,cSurg=S,cPath=S,cPmsc=cR(4),cAnal=cR(7),cMtb=cR(8);
+    /* SciLifeLab lanes: distinct specimens with an aliquot submitted to each platform */
+    function lane(pl){const set=new Set();
+      adj[pl.id].forEach(x=>{if(x.t==='submitted_to'&&x.dir==='in'){const al=x.o;
+        adj[al].forEach(y=>{if(y.t==='derived_from'&&y.dir==='out')set.add(y.o);});}});return set.size;}
+    const lDNA=lane(platforms.CG),lRNA=lane(platforms.GX),lProt=lane(platforms.MS);
+    const LT=(lDNA+lRNA+lProt)||1;
+    const W=1120,H=340,yMid=196;
+    const X={coord:70,surg:214,path:358,pmsc:500,sci:728,anal:920,mtb:1048};
+    const sc=94/Math.max(1,S);
+    const COL={coord:'#457b9d',surg:'#e76f51',path:'#264653',pmsc:'#2a9d8f',anal:'#6a4c93',mtb:'#e9c46a'};
+    const MOL=[['DNA','Clinical Genomics','#457b9d','rgba(69,123,157,.34)',lDNA],
+               ['RNA','Genomics Express','#c99a3a','rgba(201,154,58,.42)',lRNA],
+               ['Protein','Clinical Proteomics','#9c6644','rgba(156,102,68,.36)',lProt]];
+    const green='rgba(42,157,143,.24)';
+    function bar(x,h,col){return '<rect x="'+(x-4)+'" y="'+(yMid-h/2)+'" width="8" height="'+Math.max(2,h)+'" rx="2" fill="'+col+'"/>';}
+    function rib(x0,a0,b0,x1,a1,b1,fill){const mx=(x0+x1)/2;
+      return '<path d="M'+x0+' '+a0+' C'+mx+' '+a0+' '+mx+' '+a1+' '+x1+' '+a1+' L'+x1+' '+b1+' C'+mx+' '+b1+' '+mx+' '+b0+' '+x0+' '+b0+' Z" fill="'+fill+'"/>';}
+    const hCoord=cCoord*sc,hSurg=cSurg*sc,hPath=cPath*sc,hPmsc=cPmsc*sc,hAnal=cAnal*sc,hMtb=cMtb*sc;
+    let sv='';
+    /* left chain */
+    sv+=rib(X.coord,yMid-hCoord/2,yMid+hCoord/2,X.surg,yMid-hSurg/2,yMid+hSurg/2,green);
+    sv+=rib(X.surg,yMid-hSurg/2,yMid+hSurg/2,X.path,yMid-hPath/2,yMid+hPath/2,green);
+    sv+=rib(X.path,yMid-hPmsc/2,yMid+hPmsc/2,X.pmsc,yMid-hPmsc/2,yMid+hPmsc/2,green);
+    /* drop at pathology -> PMSC (stalled specimens) */
+    const dP=cPath-cPmsc;
+    if(dP>0){const th=dP*sc,y0=yMid+hPmsc/2,y1=yMid+hPath/2,bx=X.path+(X.pmsc-X.path)*0.6,by=H-26;
+      sv+='<path d="M'+X.path+' '+y0+' C'+((X.path+bx)/2)+' '+y0+' '+(bx-16)+' '+(by-th)+' '+bx+' '+(by-th)+' L'+bx+' '+by+' C'+(bx-16)+' '+by+' '+((X.path+bx)/2)+' '+y1+' '+X.path+' '+y1+' Z" fill="rgba(231,111,81,.32)"/>';
+      sv+='<text x="'+(bx+4)+'" y="'+(by-th/2+3)+'" font-size="10" fill="#b3401f">−'+dP+' stalled</text>';}
+    /* SciLifeLab lanes stacked, centred on yMid */
+    const totLaneH=(lDNA+lRNA+lProt)*sc+2*16;
+    let ly=yMid-totLaneH/2;
+    const laneR=MOL.map(m=>{const h=m[4]*sc;const o={m:m,ty:ly,tb:ly+h};ly+=h+16;return o;});
+    /* fan PMSC -> lanes */
+    let sy=yMid-hPmsc/2;
+    laneR.forEach(L=>{const segH=hPmsc*L.m[4]/LT,sa=sy,sb=sy+segH;sy+=segH;
+      sv+=rib(X.pmsc,sa,sb,X.sci,L.ty,L.tb,L.m[3]);
+      sv+='<rect x="'+(X.sci-4)+'" y="'+L.ty+'" width="8" height="'+Math.max(2,L.tb-L.ty)+'" rx="2" fill="'+L.m[2]+'"/>';
+      sv+='<text x="'+X.sci+'" y="'+(L.ty-3)+'" text-anchor="middle" font-size="9.5" font-weight="700" fill="'+L.m[2]+'">'+L.m[0]+' · '+L.m[4]+'</text>';});
+    /* merge lanes -> analysis */
+    let ay=yMid-hAnal/2;
+    laneR.forEach(L=>{const segH=hAnal*L.m[4]/LT,ta=ay,tb=ay+segH;ay+=segH;sv+=rib(X.sci,L.ty,L.tb,X.anal,ta,tb,L.m[3]);});
+    sv+=rib(X.anal,yMid-hAnal/2,yMid+hAnal/2,X.mtb,yMid-hMtb/2,yMid+hMtb/2,green);
+    /* nodes */
+    sv+=bar(X.coord,hCoord,COL.coord)+bar(X.surg,hSurg,COL.surg)+bar(X.path,hPath,COL.path)+bar(X.pmsc,hPmsc,COL.pmsc)+bar(X.anal,hAnal,COL.anal)+bar(X.mtb,hMtb,COL.mtb);
+    /* top labels + counts */
+    const NL=[[X.coord,'Study coordination',cCoord,COL.coord],[X.surg,'Surgery',cSurg,COL.surg],
+      [X.path,'Pathology',cPath,COL.path],[X.pmsc,'PMSC lab · CCK',cPmsc,COL.pmsc],
+      [X.sci,'SciLifeLab (parallel)',null,'#6a4c93'],[X.anal,'Analysis',cAnal,COL.anal],[X.mtb,'MTB',cMtb,COL.mtb]];
+    NL.forEach(t=>{sv+='<text x="'+t[0]+'" y="30" text-anchor="middle" font-size="10.5" font-weight="700" fill="#3a4048">'+t[1]+'</text>';
+      if(t[2]!=null)sv+='<text x="'+t[0]+'" y="43" text-anchor="middle" font-size="10.5" font-weight="800" fill="'+t[3]+'">'+t[2]+'</text>';});
+    sv+='<text x="70" y="'+(H-6)+'" font-size="9.5" fill="#8a929c">Width = specimens; at PMSC lab (AllPrep) each specimen splits into DNA / RNA / Protein and is analysed in parallel at SciLifeLab, then results merge for Analysis &amp; MTB.</text>';
+    host.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:820px;height:auto;display:block">'+sv+'</svg>';
+  }
+
+  buildLayers(); computeDash();
+
+  document.querySelectorAll('aside.left input[type=checkbox][data-f]').forEach(cb=>cb.addEventListener('change',()=>{
+    gFacet[cb.dataset.f][cb.dataset.v]=cb.checked?1:0;gFocus=null;gExpand=null;selNode=null;gHiSet=null;gHiMode=null;syncChips();}));
+  document.querySelectorAll('aside.left .chips .chip').forEach(ch=>ch.addEventListener('click',()=>{
+    setHighlight(chipMap[ch.textContent.trim()]);syncChips();}));
+  document.querySelectorAll('.ucbtn').forEach(b=>b.addEventListener('click',()=>{
+    selNode=null;renderInspector(null);setHighlight(b.dataset.uc);syncChips();}));
+
+  const q=document.getElementById('q');
+  if(q)q.addEventListener('keydown',e=>{if(e.key!=='Enter')return;
+    const v=e.target.value.trim().toUpperCase(),digits=v.replace(/\D/g,'');let hit=null;
+    sampleNodes.forEach(s=>{const num=s.label.replace('S-','');
+      if(v===s.label||('S-'+num)===v||(digits&&parseInt(num,10)===parseInt(digits,10)))hit=s;});
+    if(hit){switchToTab('graph');selectGraphNode(hit);e.target.blur();}
+    else{e.target.style.outline='2px solid #e76f51';setTimeout(()=>e.target.style.outline='',700);}});
+
+  renderInspector(null); syncChips(); syncLayers();
+})();
+</script>
+
+</body>
+</html>

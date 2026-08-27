@@ -1,0 +1,143 @@
+﻿"Variable / Field Name"	"Form Name"	"Section Header"	"Field Type"	"Field Label"	"Choices, Calculations, OR Slider Labels"	"Field Note"	"Text Validation Type OR Show Slider Number"	"Text Validation Min"	"Text Validation Max"	Identifier?	"Branching Logic (Show field only if...)"	"Required Field?"	"Custom Alignment"	"Question Number (surveys only)"	"Matrix Group Name"	"Matrix Ranking?"	"Field Annotation"
+record_id	research_subjects_enrollment		text	"<div class=""rich-text-field-label""><p>Record ID</p></div>"													
+study_id	research_subjects_enrollment		text	"Study ID"													
+res_sub_consent	research_subjects_enrollment		yesno	"Signed informed consent"													
+res_sub_date_birth	research_subjects_enrollment		text	"Date of birth"		YYYY-MM-DD	date_ymd			y							
+res_sub_enroll_date	research_subjects_enrollment		text	"Date of enrollment in the study"		YYYY-MM-DD	date_ymd										
+res_sub_name	research_subjects_enrollment		text	"Patient's enrolling oncologist"		"HSA ID"											
+res_sub_email	research_subjects_enrollment		text	"Email address of the patient"			email										
+res_sub_sex	research_subjects_enrollment		radio	"Biological sex"	"1, Female | 2, Male"												
+res_sub_exactage	research_subjects_enrollment		calc	"Exact age (years) at enrollment"	"round(datediff([res_sub_date_birth],[res_sub_enroll_date], 'y'),1)"	Years											
+other_studies	research_subjects_enrollment		yesno	"If the patient other studies"													
+sample_date	sample_collection		text	"Sample collection date / Surgery"			date_ymd										
+sample_time	sample_collection		text	"Time when samples were collected"			time										
+sample_comments1	sample_collection		text	Comments													
+sample_type	sample_collection		checkbox	"Types of samples collected"	"1, Blood | 2, Tissue | 3, Biopsy | 4, FFPE | 5, Other"												
+if_other	sample_collection		text	"If other"													
+sample_blood_loc	sample_collection		checkbox	"Where was the blood drawn?"	"1, Vein arm | 2, Vein hand | 3, Vein groin | 4, Artery arm | 5, Artery hand | 6, Artery groin"						"[sample_type(1)] = '1'"						
+sample_blood_ven_no	sample_collection		radio	"Numbers of tubes collected"	"1, 1 | 2, 2 | 3, 3"						"[sample_blood_loc(1)] = '1' or [sample_blood_loc(2)] = '1' or [sample_blood_loc(3)] = '1'"						
+sample_tube_loc	sample_collection		radio	"Blood collection tube"	"1, Heparin tube (green cap) | 2, EDTA tube (purple cap) | 3, Citrate tube (blue cap) | 4, Serum tube (yellow cap) | 5, Serum tube (red cap)"	"Type of tube"					"[sample_type(1)] = '1'"						
+sample_blood_ven_biob	sample_collection		yesno	"Tubes containing venous blood has been sent to biobank"							[sample_blood_ven_no]>0						
+sample_blood_ven_biob_no	sample_collection		text	"Number of tubes containing venous blood sent to biobank"			number	0	10		"[sample_blood_ven_biob] = '1'"						
+sample_blood_ven_pat	sample_collection		yesno	"Tubes containing venous blood has been sent to pathology department"							[sample_blood_ven_no]>0						
+centrifugation_time	sample_collection		text	"Centrifugation Time"		"Time at centrifugation "	time				"[sample_type(1)] = '1'"						
+calc_centrifufation	sample_collection		text	"Calculation time from sample collection until centrifugation "							"[sample_type(1)] = '1'"						
+sample_comments2	sample_collection		text	"Comments: sample handling"													
+pat_sample_id_1	pathology_sample_handling_and_registration		text	"PAD number"													
+pat_sample_date	pathology_sample_handling_and_registration		text	"Sample received at Pathology date"		YYYY-MM-DD	date_ymd										
+receive_time	pathology_sample_handling_and_registration		text	"Sample received, time"			time										
+pat_sample_time	pathology_sample_handling_and_registration		text	"Sample processing started"			time										
+prep_wash	pathology_sample_handling_and_registration		yesno	"Sample washed"													
+pat_sample_prep_dev1	pathology_sample_handling_and_registration		text	"Sample preparation - Timing deviations 
+(e.g., delays from collection to processing)"													
+pat_sample_prep_dev2	pathology_sample_handling_and_registration		text	"Sample preparation - Temperature deviations 
+(e.g., sample not kept on ice, temperature excursion, incorrect storage)"													
+pat_sample_prep_dev_3	pathology_sample_handling_and_registration		text	"Sample preparation - Handling deviations
+(e.g., mechanical damage, contamination, incorrect dissection)"													
+pat_sample_prep_dev_4	pathology_sample_handling_and_registration		text	"Sample preparation - Labeling, documantations deviation
+(e.g., mismatched IDs, missing information, wrong tube label)"													
+tube_label	pathology_sample_handling_and_registration		text	"Biobank Tube Barcode number"													
+rack_number	pathology_sample_handling_and_registration		text	"The pathology plate number where the tube is stored"													
+rack_position	pathology_sample_handling_and_registration		text	"The position of the tube in the pathology box (e.g., A3, B7, 12)"													
+pmsc_id	pmsc_sample_registration		text	"PMSC ID"													
+sample_type1	pmsc_sample_registration		checkbox	"Sample Type"	"1, FFPE | 2, Fresh-Frozen | 3, Blood | 4, Other"												
+sample_type_3	pmsc_sample_registration		text	"If other, specify"							"[sample_type1(4)] = ""4"""						
+prep_sectioning	pmsc_sample_registration	"Preparation Steps"	checkbox	"Sectioning performed?"	"1, Yes | 2, No | 3, N/A"						"[sample_type1(1)] = ""1"""						
+prep_sectioning_date	pmsc_sample_registration		text	"Date of the sectioning"			date_ymd				"[sample_type1(1)] = ""1"""						
+prep_sectioning_sign	pmsc_sample_registration		text	Operator		"HSA ID"					"[sample_type1(1)] = ""1"""						
+if_microdissection	pmsc_sample_registration		yesno	Microdissection							"[sample_type1(1)] = ""1"""						
+number_sections	pmsc_sample_registration		text	"Number of sections"							"[sample_type1(1)] = ""1"""						
+misrodissection_thickness	pmsc_sample_registration		text	Thickness							"[sample_type1(1)] = ""1"""						
+number_role	pmsc_sample_registration		text	"Number of the rolls in the tube"							"[sample_type1(1)] = ""1"""						
+tube_number	pmsc_sample_registration		text	"Number of tubes"							"[sample_type1(1)] = ""1"""						
+transport_temp_range	pmsc_sample_registration		checkbox	"Transport temperature range (°C)"	"1, 2-10 °C | 2, Outside 2-10 °C | 3, Unknown"	"Acceptable range: 2-10 °C"					"[sample_type1(2)] = ""1"""						
+prep_cryoprep_2	pmsc_sample_registration		yesno	"Cryoprep performed? "							"[sample_type1(2)] = ""1"""						
+pmsc_cryoprep_date	pmsc_sample_registration		text	"Date of Cryoprep "		YYYY-MM-DD	date_ymd				"[sample_type1(2)] = ""1"""						
+prep_cryoprep_sign	pmsc_sample_registration		text	Operator		"HSA ID"					"[sample_type1(2)] = ""1"""						
+pieces_taken	pmsc_sample_registration		text	"Number of pieces taken"							"[sample_type1(2)] = ""1"""						
+leftover_material	pmsc_sample_registration		text	"Number of pieces left"							"[sample_type1(2)] = ""1"""						
+sample_size_mm	pmsc_sample_registration		text	"Sample Size"		mm3					"[sample_type1(2)] = ""1"""						
+sample_color	pmsc_sample_registration		text	"Color of the sample"							"[sample_type1(2)] = ""1"""						
+pmsc_id_v2	pmsc_sample_dnarna		text	"PMSC ID"													
+allprep_date_v2	pmsc_sample_dnarna		text	"AllPrep extraction date"			date_ymd										
+allprep_operator	pmsc_sample_dnarna		text	Operator		"HSA ID"											
+cryopowder_all_used	pmsc_sample_dnarna		yesno	"All cryopulverized tissue used"													
+cryopowder_remain_am	pmsc_sample_dnarna		text	"Amount of cryopulverized tissue remaining"							"[cryopowder_all_used] = ""0"""						
+cryopowder_storage_loc	pmsc_sample_dnarna		text	"Storage location of remaining cryopulverized tissue"							"[cryopowder_all_used] = ""0"""						
+pmscid_dna	pmsc_sample_dnarna	DNA	text	PMSC-ID-DNA													
+dna_elution	pmsc_sample_dnarna		text	"DNA elution volume
+"		µl											
+dna_elution_choice	pmsc_sample_dnarna		radio	"DNA Elution Buffer"	"1, EB buffer (Qiagen) | 2, AE buffer | 3, TE buffer | 4, Nuclease-free water"												
+dna_conc	pmsc_sample_dnarna		text	"DNA concentration (Qubit)"		µl/µg											
+dna_total	pmsc_sample_dnarna		calc	"Total DNA amount 
+"	"[dna_elution] * [dna_conc]"	µg											
+qc_dna	pmsc_sample_dnarna	"DNS QC"	checkbox	"Quality Checking"	"1, Pass | 2, Fail"												
+qc_fail_action	pmsc_sample_dnarna		checkbox	"If Fail"	"1, Repeat analysis | 2, Exclude sample | 3, Investigate / troubleshooting"												
+dna_repeat	pmsc_sample_dnarna		text	"Enter the Study ID or PMSC ID used for the repeat analysis"													
+dnaqc_comment	pmsc_sample_dnarna		text	Comment													
+send_dna	pmsc_sample_dnarna	"Clinical Genomics"	text	"Send to Clinical Genomics"			date_ymd										
+sub_dna	pmsc_sample_dnarna		text	"Submitted Volume"		µl											
+datafrom_cg	pmsc_sample_dnarna		text	"Received sequencing data from CG"			date_ymd										
+dna_location	pmsc_sample_dnarna	"DNA Storage"	text	"Location / Freezer"													
+dna_box	pmsc_sample_dnarna		text	"Box Name"													
+dna_positon	pmsc_sample_dnarna		text	Position													
+pmscid_rna	pmsc_sample_dnarna	RNA	text	PMSC-ID-RNA													
+rna_elution	pmsc_sample_dnarna		text	"RNA elution volume"		µl											
+rna_elution_choice	pmsc_sample_dnarna		radio	"RNA elution buffer"	"1, RNase-free water | 2, RNase-free Tris buffer | 3, Buffer RE (Qiagen) | 4, Low-EDTA TE buffer | 5, Other"												
+rna_conc	pmsc_sample_dnarna		text	"RNA concentration (Qubit)"		µl/µg											
+total_rna	pmsc_sample_dnarna		calc	"Total RNA amount"	"[rna_elution] * [rna_conc]"	µg											
+qc_rna	pmsc_sample_dnarna	"RNA QC"	radio	"Quality Checking"	"1, Pass | 2, Fail"												
+rna_fail	pmsc_sample_dnarna		radio	"If Fail"	"1, Repeat analysis | 2, Exclude sample | 3, Investigate / troubleshooting"												
+rna_repeat	pmsc_sample_dnarna		text	"Enter the Study ID or PMSC ID used for the repeat analysis"													
+rna_comment	pmsc_sample_dnarna		text	Comment													
+send_rna	pmsc_sample_dnarna		text	"Send to Genomics Express"			date_ymd										
+sub_rna	pmsc_sample_dnarna		text	"Submitted Volume"		µl											
+receive_rna	pmsc_sample_dnarna		text	"Receive data from Genomics Express"			date_ymd										
+rna_loc	pmsc_sample_dnarna	"RNA Storage"	text	"Location / Freezer"													
+rna_box	pmsc_sample_dnarna		text	"Box Name"													
+rna_pos	pmsc_sample_dnarna		text	"Position "													
+pmsc_id_v2_v2	pmsc_sample_proteomik		text	"PMSC ID"													
+prot_extr_operator	pmsc_sample_proteomik		text	Operator		"HSA ID"											
+comment_prot	pmsc_sample_proteomik		text	"Comments (apperaence / color of lysate)"													
+protein_date	pmsc_sample_proteomik		text	"Protein extraction date"			date_ymd										
+prot_conc	pmsc_sample_proteomik		text	"Protein Concentration"		µg/µl											
+prot_elution	pmsc_sample_proteomik		text	"Protein Elution Volume"		µl											
+total_protein	pmsc_sample_proteomik		calc	"Total protein"	"[prot_conc] * [prot_elution]"	µg											
+allprep_comment_v2	pmsc_sample_proteomik		text	Comments													
+sp3_digestion	pmsc_sample_proteomik		text	"Peptide extraction date"			date_ymd										
+prot_extr_operator_2	pmsc_sample_proteomik		text	Operator		"HSA ID"											
+peptide_elution	pmsc_sample_proteomik		text	"Peptide elution volume
+"		µl											
+peptide_conc	pmsc_sample_proteomik		text	"Peptide concentration"		ng/µg											
+total_peptide	pmsc_sample_proteomik		calc	"Total Peptide"	"[peptide_elution] * [peptide_conc]/20"	ng											
+injection_amount	pmsc_sample_proteomik	"Mass spectrometry
+"	text	"Injection Amount"		ng											
+prot_extr_operator_3	pmsc_sample_proteomik		text	Operator		"HSA ID"											
+masspec_run	pmsc_sample_proteomik		radio	"Mass Spectrometry run"	"1, TimsTOF | 2, Astral | 3, Other"												
+ms_other	pmsc_sample_proteomik		text	"if Other"													
+ms_qcheck	pmsc_sample_proteomik		radio	"MS Quality Check"	"1, Pass | 2, Fail"												
+peptide_loc	pmsc_sample_proteomik	"Peptide Storage"	text	"Location / Freezer"													
+peptide_box	pmsc_sample_proteomik		text	"Box Name"													
+peptide_pos	pmsc_sample_proteomik		text	Position													
+date_en_sum	summary		descriptive	"<b>Date of enrollment in the study:</b> [res_sub_enroll_date]"													
+samplecoll_sum	summary		descriptive	"<b>Sample collection date / Surgery:</b> [sample_date]
+"													
+samplepat_sum	summary		descriptive	"<b>Sample received at Pathology date:</b> [pat_sample_date]
+"													
+cryoprep_sum	summary		descriptive	"<b>Date of Cryoprep:</b> [pmsc_cryoprep_date]
+"													
+allprep_sum	summary		descriptive	"<b>AllPrep extraction date:</b> [allprep_date_v2]
+"													
+send_dna1	summary		descriptive	"<b>Send to Clinical Genomics:</b> [send_dna]
+"													
+received_sum	summary		descriptive	"<b>Received sequencing data from CG:</b> [datafrom_cg]
+"													
+sendrna_sum	summary		descriptive	"<b>Send to Genomics Express:</b> [send_rna]
+"													
+receiver_sum	summary		descriptive	"<b>Receive data from Genomics Express:</b> [receive_rna]
+"													
+protextr_sum	summary		descriptive	"<b>Protein extraction date:</b> [protein_date]
+"													
+spectronaut_sum	summary		descriptive	"<b>Spectronaut Search:</b> [date_spec]
+"													
+order_date	mtb_portal		text	Date		YYYY-MM-DD	date_ymd										

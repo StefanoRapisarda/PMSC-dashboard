@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+
+# Node / SvelteKit (web/)
+node_modules/
+.svelte-kit/
+build/
+.vercel/
+.output/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Python / FastAPI (api/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Generated synthetic data (data/ output — the generator is tracked, its output is not)
+data/out/
+
+# Editors
+*.swp
+.idea/
