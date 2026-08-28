@@ -2,6 +2,7 @@
   /* The shell: banner, brand, and v3's three tabs. Nothing else lives here so
      that each view owns its own layout, exactly as the mockup did. */
   import { page } from '$app/state';
+  import { base } from '$app/paths';
   import '../app.css';
   import type { Snippet } from 'svelte';
   import { api } from '$lib/api';
@@ -17,7 +18,13 @@
     { href: '/dashboard', label: 'Study dashboard' },
     { href: '/graph', label: 'Knowledge graph' },
   ];
-  const active = (href: string) => page.url.pathname.startsWith(href);
+  /* Both of these have to carry `base`, for the same reason the redirect on the
+     front page does: on GitHub Pages every real path is prefixed with the
+     repository name, so a bare '/graph' leaves the site, and a comparison
+     against a bare '/graph' never matches the path the browser is actually on,
+     which would leave no tab looking active. */
+  const link = (href: string) => `${base}${href}`;
+  const active = (href: string) => page.url.pathname.startsWith(link(href));
 </script>
 
 <div class="mockbanner">
@@ -33,10 +40,10 @@
 <header class="top">
   <div class="brand">PMSC Dashboard <small>· {meta?.study.name ?? 'PreDDLung'} (showcase)</small></div>
   <nav class="tabs">
-    <a href={tabs[0].href} class:active={active(tabs[0].href)}>{tabs[0].label}</a>
+    <a href={link(tabs[0].href)} class:active={active(tabs[0].href)}>{tabs[0].label}</a>
     <span class="tabsep"></span>
     {#each tabs.slice(1) as tab}
-      <a href={tab.href} class:active={active(tab.href)}>{tab.label}</a>
+      <a href={link(tab.href)} class:active={active(tab.href)}>{tab.label}</a>
     {/each}
   </nav>
 </header>
