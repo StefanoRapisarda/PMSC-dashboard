@@ -1,0 +1,84 @@
+# Publish the showcase to GitHub Pages.
+#
+# The site is static, but the data in it is not committed: the cohort is
+# regenerated from the tracked REDCap dictionary on every run, the database is
+# built from it, and the three API responses the application asks for are
+# written out as files. That is the same sequence the Dockerfile runs, and it is
+# what keeps the published numbers honest — they cannot drift from the code that
+# produces them, because nothing is carried between runs.
+name: Publish to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:      # so it can also be run by hand from the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push supersedes an older run rather than
+# queueing behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the API's dependencies
+        run: pip install -r api/requirements.txt
+
+      - name: Generate the synthetic cohort and build the database
+        run: |
+          python data/generator/generate.py
+          python data/builder/build.py --web /tmp/discard
+          cd api && python -m app.seed --force
+
+      - name: Write the three API responses out as files
+        run: python api/export_static.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # npm ci is the stricter choice and it does not work here: the lock file
+      # was produced on a Mac, so it names no Linux build of Rollup and ci
+      # refuses to resolve one. npm install still takes every version from the
+      # lock file and additionally picks the platform-specific packages.
+      - name: Install the front end's dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      # BASE_PATH is the repository name, because Pages serves a project site
+      # from a subdirectory. VITE_STATIC_DATA switches the API client over to
+      # reading the files written above.
+      - name: Build the site
+        working-directory: web
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}
+          VITE_STATIC_DATA: '1'
+        run: npm run build:pages
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

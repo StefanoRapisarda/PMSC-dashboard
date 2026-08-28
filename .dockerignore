@@ -42,3 +42,6 @@ web/tests/*.png
 .env
 .env.*
 .git/
+
+# Generated for the static build; the container serves from the API instead
+web/static/data/

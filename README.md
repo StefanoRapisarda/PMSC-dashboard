@@ -147,3 +147,40 @@ go, and a plain click never triggers it.
 - **Yield is not quality.** QC here is concentration plus total yield plus a
   Pass/Fail. There is no RIN, no DV200 and no purity ratio in the schema, so the
   app cannot say whether material was intact. See `docs/questions.md`.
+
+## Published as a static site
+
+The same application is published to GitHub Pages, so that colleagues can be
+sent a link rather than asked to install Docker.
+
+This is possible because the showcase asks the API exactly three questions —
+`/api/meta`, `/api/overview` and `/api/graph` — and every one of them returns
+the same answer for the whole life of a release. The database is built at
+release time from a seeded generator and nothing ever writes to it. So
+`api/export_static.py` calls the same service functions the routes call and
+writes those three responses out as files, and `VITE_STATIC_DATA=1` switches
+`lib/api.ts` over to reading them. About 520 KB of JSON replaces the entire
+service.
+
+```bash
+cd api && .venv/bin/python export_static.py     # writes web/static/data/*.json
+cd ../web && BASE_PATH=/PMSC-dashboard VITE_STATIC_DATA=1 npm run build:pages
+```
+
+`.github/workflows/pages.yml` does the same on every push to `main`, and it
+regenerates the cohort rather than carrying the JSON in git, for the same reason
+the container does: the same commit must always give the same numbers.
+
+Two details are there because of how Pages works rather than because of
+anything in this application. `BASE_PATH` exists because a project site is
+served from a subdirectory named after the repository, so every asset has to be
+addressed relative to it. `build:pages` copies `index.html` to `404.html`
+because that is the only way to tell Pages what to do with `/graph` and
+`/dashboard`, which are routes the application knows about and the server does
+not; the front page still answers 200, and a deep link is answered with the
+application and a 404 status.
+
+**This does not change the design.** The argument above for deriving every
+number in SQL from a database still holds for the system this is a showcase
+for. A published build of a fixed cohort is a different problem from a service
+over data that moves.
