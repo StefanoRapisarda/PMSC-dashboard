@@ -16,9 +16,9 @@ import type { Core, EdgeSingular, NodeSingular } from 'cytoscape';
 
 import type { GraphEdge, GraphNode } from '$lib/types';
 import type { GraphModel } from './model';
-import { COLORS, LAYERED_COLUMN, RADIUS, TYPE_LABEL, hexA, type NodeType } from './v3';
+import { COLORS, RADIUS, TYPE_LABEL, hexA, type NodeType } from './v3';
 
-export type Layout = 'force' | 'shell' | 'clustered' | 'grouped' | 'layered';
+export type Layout = 'force' | 'shell' | 'clustered' | 'grouped';
 
 /**
  * The four outcome buckets the clustered view sorts material into.
@@ -37,11 +37,22 @@ export const OUTCOME_COLOR: Record<Outcome, string> = {
 };
 
 /** Past this many visible nodes the force layout is slow enough to be worth a
-    warning; the layered view stays instant at any size. */
+    warning. */
 export const FORCE_WARN = 2200;
+
+/** One relation as the inspector reads it. `via` is set only on a bridge, and
+    lists the hidden steps it stands in for. */
+export interface EdgePick {
+  id: string;
+  type: string;
+  a: number;
+  b: number;
+  via?: string;
+}
 
 export interface Handlers {
   onSelect?: (node: GraphNode | null) => void;
+  onSelectEdge?: (edge: EdgePick) => void;
   onHighlight?: (node: GraphNode) => void;
   /** node is null when the right-click landed on bare canvas */
   onMenu?: (node: GraphNode | null, at: { x: number; y: number }) => void;
@@ -77,6 +88,10 @@ export function style(): cytoscape.StylesheetStyle[] {
       },
     },
     ...byType,
+    /* Sized by connections, when that is switched on. The page writes the
+       diameter onto each node as data, so the rule stays declarative and
+       overrides the per-type sizes above only while the class is set. */
+    { selector: 'node.bydegree', style: { width: 'data(size)', height: 'data(size)' } },
     /* platforms are the only nodes labelled at rest, as in v3 */
     {
       selector: 'node[type="platform"], node[type="mtb"]',
@@ -130,6 +145,11 @@ export function style(): cytoscape.StylesheetStyle[] {
     { selector: '.faded', style: { opacity: 0.02 } },
     { selector: 'node.faded', style: {
         'underlay-opacity': 0, 'border-width': 0, 'text-opacity': 0 } },
+    /* Picking by hand fades the rest far less, because the nodes still to be
+       picked have to stay visible enough to click. Labels stay off. */
+    { selector: 'node.receded', style: { opacity: 0.3 } },
+    /* faded out by a path, a family or a lit type: not there to be clicked */
+    { selector: '.inert', style: { events: 'no' } },
     /* and what IS highlighted comes fully forward: the depth shading otherwise
        holds it at whatever the 3-D projection decided, which eats the contrast
        the highlight exists to create */
@@ -142,6 +162,18 @@ export function style(): cytoscape.StylesheetStyle[] {
         'border-width': 3, 'border-color': '#e9c46a', 'border-opacity': 1,
         'underlay-color': '#e9c46a', 'underlay-opacity': 0.55,
         'underlay-padding': 7, 'underlay-shape': 'ellipse', 'z-index': 50 } },
+    /* A line has to say it can be clicked before it is, and say which one you
+       picked afterwards. Teal is the colour a selected node's ring already uses.
+       These come after the dimming rules so that a picked line stays readable
+       inside a trace or a highlight. */
+    { selector: 'edge.hovered', style: {
+        width: 2.5, 'line-color': '#ffffff', opacity: 1, 'z-index': 30 } },
+    { selector: 'edge.selected', style: {
+        width: 3, 'line-color': '#2a9d8f', 'line-style': 'solid', opacity: 1,
+        'z-index': 40 } },
+    { selector: 'node.edge-end', style: {
+        'border-width': 2, 'border-color': '#2a9d8f', 'border-opacity': 1,
+        'z-index': 40 } },
     { selector: '.hidden', style: { display: 'none' } },
   ] as unknown as cytoscape.StylesheetStyle[];
 }
@@ -173,26 +205,18 @@ export function toElements(nodes: GraphNode[], edges: GraphEdge[],
 }
 
 /**
- * Who owns positions and the viewport, per layout.
+ * Who owns positions and the viewport.
  *
- * In the force view the simulation owns both: a drag rotates the projection, so
+ * In every view the rotator owns both: a drag rotates the projection, so
  * Cytoscape's own panning must be off or one gesture drives two things at once
  * and the frame slides out from under the graph. Node dragging is off for the
  * same reason — the next frame would overwrite whatever you moved.
- *
- * The flat views are the opposite: nothing is animating, so panning and grabbing
- * are the natural way to get around them.
  */
-export function setInteraction(cy: Core, layout: Layout): void {
-  /* Every view except Layered is placed in three dimensions and owned by the
-     rotator: the drag turns the projection, so Cytoscape must not also pan, and
-     a node dragged by hand would be overwritten on the next frame. Layered is
-     the one genuinely flat view — its left-to-right axis IS the point, and
-     turning it would destroy that. */
-  const simulated = layout !== 'layered';
-  cy.userPanningEnabled(!simulated);
+export function setInteraction(cy: Core): void {
+  /* Every view is placed in three dimensions and owned by the rotator. */
+  cy.userPanningEnabled(false);
   cy.boxSelectionEnabled(false);
-  cy.autoungrabify(simulated);
+  cy.autoungrabify(true);
 }
 
 export function mount(container: HTMLElement, elements: cytoscape.ElementDefinition[],
@@ -220,6 +244,8 @@ export function mount(container: HTMLElement, elements: cytoscape.ElementDefinit
   /* a bridge says what it stands for when you point at it */
   cy.on('mouseover', 'edge.bridge', (event) => event.target.addClass('labelled'));
   cy.on('mouseout', 'edge.bridge', (event) => event.target.removeClass('labelled'));
+  cy.on('mouseover', 'edge', (event) => event.target.addClass('hovered'));
+  cy.on('mouseout', 'edge', (event) => event.target.removeClass('hovered'));
 
   cy.on('mouseout', 'node', (event) => {
     (event.target as NodeSingular).removeClass('hovered labelled');
@@ -251,6 +277,17 @@ export function mount(container: HTMLElement, elements: cytoscape.ElementDefinit
     if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
     handlers.onExpand?.(nodeData(event.target as NodeSingular));
   });
+  /* A click on a line selects the relation. There is no double-click meaning
+     for a line, so nothing waits. Cytoscape tests nodes before edges, so a click
+     on a dot that a line runs into still lands on the dot. */
+  cy.on('tap', 'edge', (event) => {
+    const edge = event.target as EdgeSingular;
+    handlers.onSelectEdge?.({
+      id: edge.id(), type: edge.data('type'),
+      a: Number(edge.data('source')), b: Number(edge.data('target')),
+      via: edge.data('via'),
+    });
+  });
   cy.on('tap', (event) => {
     if (event.target === cy) handlers.onSelect?.(null);
   });
@@ -268,57 +305,6 @@ export function mount(container: HTMLElement, elements: cytoscape.ElementDefinit
   container.addEventListener('contextmenu', (event) => event.preventDefault());
 
   return cy;
-}
-
-/**
- * Lay out the one view Cytoscape still owns.
- *
- * Everything else is placed in three dimensions and projected each frame by the
- * rotator: force by the simulation in force3d.ts, shell by shell.ts, and the two
- * clustered views by clusters.ts. That is what lets all four be turned.
- *
- * layered — v3's pipeline axis: a column per node type, left to right. Computed
- *           directly rather than handed to a layout engine, because the column
- *           order is the point and must not be rearranged — which is also why it
- *           is the one view that stays flat.
- */
-export function runLayout(cy: Core, layout: Layout, onDone?: () => void): void {
-  const visible = cy.nodes().not('.hidden');
-
-  if (layout !== 'layered') { onDone?.(); return; }
-
-  {
-    const columns: Record<number, NodeSingular[]> = {};
-    visible.forEach((node) => {
-      const type = node.data('type') as string;
-      if (type === 'operator') return;
-      const column = LAYERED_COLUMN[type] ?? 2;
-      (columns[column] = columns[column] || []).push(node);
-    });
-    const gapX = 300;
-    Object.entries(columns).forEach(([key, group]) => {
-      const column = Number(key);
-      const sorted = group.sort((a, b) => Number(a.id()) - Number(b.id()));
-      const spread = Math.max(600, sorted.length * 11);
-      sorted.forEach((node, i) => {
-        node.position({
-          x: (column - 2.5) * gapX,
-          y: sorted.length > 1 ? -spread / 2 + (spread * i) / (sorted.length - 1) : 0,
-        });
-      });
-    });
-    const operators = visible.filter((n) => n.data('type') === 'operator');
-    operators.forEach((node, i) => {
-      node.position({
-        x: -400 + (800 * i) / Math.max(1, operators.length - 1),
-        y: Math.max(600, visible.length * 5),
-      });
-    });
-    cy.fit(undefined, 40);
-    onDone?.();
-    return;
-  }
-
 }
 
 /** Translucent labelled hull behind each cluster — by type in the grouped view,

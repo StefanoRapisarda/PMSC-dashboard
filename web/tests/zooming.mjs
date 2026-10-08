@@ -73,8 +73,8 @@ await new Promise(r => setTimeout(r, 300));
 check('rotating still does not pan or zoom',
       panPreDrag === (await pan()) && zoomPreDrag === (await zoom()));
 
-/* the flat views hand zooming back to Cytoscape, which needs it to still work */
-for (const name of ['Layered', 'Grouped']) {
+/* zooming has to work in the other views too */
+for (const name of ['Grouped']) {
   await layoutBtn(name);
   await new Promise(r => setTimeout(r, 1200));
   await page.mouse.move(centre.x, centre.y);

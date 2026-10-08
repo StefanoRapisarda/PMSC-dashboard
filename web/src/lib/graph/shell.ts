@@ -221,11 +221,22 @@ export function shellPlacement(ids: number[], model: GraphModel): ShellPlacement
 
   const rings = ringsFor(counts);
 
-  /* patients define the spokes; everything of theirs joins the same ray */
-  const patients = ids.filter((id) => model.nodes[id]?.type === 'patient');
+  /* Patients define the spokes; everything of theirs joins the same ray. A
+     spoke belongs to every patient who owns something on screen, whether or not
+     the patient dots themselves are switched on. Taking spokes only from visible
+     patient nodes meant that hiding the Patient layer left no spokes at all, and
+     every sample and aliquot fell onto the same fallback direction in one pile.
+     Visible patients come first, in the order they had before, so the picture
+     with patients on is unchanged. */
   const order = new Map<number, number>();
-  patients.forEach((id, i) => order.set(id, i));
-  const spokes = Math.max(1, patients.length);
+  for (const id of ids) {
+    if (model.nodes[id]?.type === 'patient') order.set(id, order.size);
+  }
+  for (const id of ids) {
+    const patient = owner.get(id);
+    if (patient != null && !order.has(patient)) order.set(patient, order.size);
+  }
+  const spokes = Math.max(1, order.size);
 
   /* Things with no patient — platforms, boxes, operators — get their own even
      spread so they do not pile onto somebody's spoke. Spread on a great circle

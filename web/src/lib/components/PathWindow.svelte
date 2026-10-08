@@ -18,6 +18,13 @@
    * happened at the same time therefore lands at the same place and is stacked
    * vertically, which is what makes parallel work look parallel. Each kind of
    * thing gets its own row, so the eye can follow one band across the page.
+   *
+   * A path traced from a patient reaches every sample that patient gave, and
+   * most patients here gave two or more. One shared Activity row then mixed the
+   * steps of different samples with nothing to say which was which. Such a path
+   * is drawn as one block of rows per sample instead, all on the same time axis,
+   * with the patient above the blocks and the tumour board below them. A path
+   * with a single sample has no blocks and looks as it always did.
    */
   import { ACTIVITY_LABEL, COLORS, TYPE_LABEL, type NodeType } from '$lib/graph/v3';
   import { elementShot, savePdf, savePng, stamp } from '$lib/graph/export';
@@ -57,10 +64,66 @@
 
   const steps = $derived(node && model ? model.lineageSteps(node) : []);
 
-  /** The sample the path is about. The patient and the board are context. */
+  /** Every sample on the path, in the order they were collected. */
+  const samples = $derived(steps.map((s) => s.node).filter((n) => n.type === 'sample')
+    .sort((a, b) => (a.collected ?? '').localeCompare(b.collected ?? '')
+                    || a.label.localeCompare(b.label)));
+  /** Several samples on one path are drawn as one block of rows each. */
+  const grouped = $derived(samples.length > 1);
+  /** The sample the path is about, when there is just one. The patient and the
+      board are context. */
   const sample = $derived(
-    node?.type === 'sample' ? node
-      : steps.find((s) => s.node.type === 'sample')?.node ?? null);
+    node?.type === 'sample' ? node : samples.length === 1 ? samples[0] : null);
+  const patient = $derived(steps.find((s) => s.node.type === 'patient')?.node ?? null);
+
+  /**
+   * Which sample a step belongs to, read from the graph. A step points at the
+   * sample it was carried out on. A fraction points at what it was extracted
+   * from, which for a peptide is the protein fraction, so that chain is followed
+   * down until it reaches a sample.
+   */
+  function sampleOf(n: GraphNode): number | null {
+    if (!model) return null;
+    const m = model;
+    const out = (id: number, type: string) =>
+      (m.adj[id] ?? []).find((x) => x.t === type && x.dir === 'out')?.o ?? null;
+    if (n.type === 'sample') return n.id;
+    if (n.type === 'activity') return out(n.id, 'used');
+    if (n.type === 'aliquot') {
+      let at = n.id;
+      for (let hops = 0; hops < 4; hops++) {
+        const parent = out(at, 'derived_from');
+        if (parent == null) return null;
+        if (m.nodes[parent]?.type === 'sample') return parent;
+        at = parent;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Which samples sent material to each platform, and when the last of that
+   * sample's results came back from it. One platform serves several samples of
+   * the same patient, so in a grouped path it appears once in each of their
+   * blocks, dated by that sample's own return rather than by the patient's.
+   */
+  const platformRuns = $derived.by(() => {
+    const runs = new Map<number, Map<number, string | null>>();
+    if (!model) return runs;
+    for (const step of steps) {
+      if (step.node.type !== 'aliquot') continue;
+      const group = sampleOf(step.node) ?? -1;
+      for (const link of model.adj[step.node.id] ?? []) {
+        if (link.t !== 'submitted_to' || link.dir !== 'out') continue;
+        const byGroup = runs.get(link.o) ?? new Map<number, string | null>();
+        runs.set(link.o, byGroup);
+        const before = byGroup.get(group) ?? null;
+        const back = step.node.returned_on ?? null;
+        byGroup.set(group, back && (!before || back > before) ? back : before);
+      }
+    }
+    return runs;
+  });
 
   /**
    * When a step happened.
@@ -130,11 +193,28 @@
   const years = $derived([...new Set(allDates.map((d) => d.slice(0, 4)))].sort());
   const showYear = $derived(years.length > 1);
 
-  const dated = $derived(steps.map((step) => {
-    const when = step.when ?? whenOf(step.node, dataBack);
-    return { node: step.node, when, time: timeOf(step.node),
-             detail: detailOf(step.node),
-             dates: dateLabel(step.node, when, showYear) };
+  /**
+   * One entry per card. `group` is the sample whose block the card sits in, or
+   * null for the patient and the board, which belong to no single sample. The
+   * key is unique per card rather than per node, because a platform can appear
+   * in more than one block.
+   */
+  type Entry = { key: string; group: number | null; node: GraphNode; when: string | null;
+                 time: string | null; detail: string; dates: string };
+  const dated = $derived(steps.flatMap((step): Entry[] => {
+    const n = step.node;
+    const make = (group: number | null, back: string | null): Entry => {
+      const when = step.when ?? whenOf(n, back);
+      return { key: `${group ?? 'all'}:${n.id}`, group, node: n, when, time: timeOf(n),
+               detail: detailOf(n), dates: dateLabel(n, when, showYear) };
+    };
+    if (!grouped || n.type === 'patient' || n.type === 'mtb') return [make(null, dataBack)];
+    if (n.type === 'platform') {
+      const byGroup = platformRuns.get(n.id);
+      if (!byGroup?.size) return [make(-1, dataBack)];
+      return [...byGroup].map(([group, back]) => make(group, back));
+    }
+    return [make(sampleOf(n) ?? -1, dataBack)];
   }));
 
   const days = (a: string, b: string) =>
@@ -195,47 +275,80 @@
    * Three platforms reporting on the same day therefore end up in three lanes,
    * one above the other, at the same point on the axis.
    */
-  type Card = { node: GraphNode; when: string | null; detail: string; dates: string };
-  type Placed = Card & { x: number; lane: number };
+  type Placed = Entry & { x: number; lane: number };
+  type Row = { key: string; type: NodeType; label: string; group: number | null;
+               count: number; lanes: number; cards: Placed[]; off: Entry[] };
 
+  /** Rows inside a sample's block. The patient and the board sit outside them. */
+  const BLOCK_ORDER: NodeType[] = ['sample', 'activity', 'aliquot', 'platform'];
+
+  function rowOf(key: string, type: NodeType, group: number | null,
+                 members: Entry[]): Row | null {
+    if (!members.length) return null;
+    /* A step with no date anywhere in the record cannot go on a time axis at
+       all. Putting it at the start would be a claim about when it happened, so
+       it goes in a strip of its own beside the axis instead. */
+    const off = members.filter((d) => !d.when);
+    /**
+     * Within one day the axis cannot separate two steps, so the pipeline order
+     * does. Not the clock: sample S-6 is recorded as collected at 14:35 and
+     * registered at pathology at 09:55 on the same day, and sorting by the
+     * clock would put pathology first, which cannot have happened. The order a
+     * sample must pass through is the thing we actually know; the clock is a
+     * form field with nothing keeping it consistent. So the pipeline places
+     * the cards, the clock is shown on them, and a disagreement between the
+     * two is flagged rather than silently obeyed.
+     */
+    const timed = members.filter((d) => d.when)
+      .map((d, i) => ({ ...d, seq: i }))
+      .sort((a, b) => (xOf(a.when) - xOf(b.when)) || (a.seq - b.seq));
+    const laneEnds: number[] = [];
+    const cards = timed.map((card) => {
+      const x = xOf(card.when);
+      let lane = laneEnds.findIndex((end) => end <= x);
+      if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
+      laneEnds[lane] = x + CARD_W + 8;
+      return { ...card, x, lane };
+    });
+    return { key, type, label: TYPE_LABEL[type] ?? type, group, count: members.length,
+             lanes: Math.max(1, laneEnds.length), cards, off };
+  }
+
+  /**
+   * The rows, each packed into as few lanes as its steps need.
+   *
+   * Two cards in the same lane must not overlap, so a card goes into the first
+   * lane whose previous card has already finished by the time this one starts.
+   * Three platforms reporting on the same day therefore end up in three lanes,
+   * one above the other, at the same point on the axis.
+   */
   const rows = $derived.by(() => {
-    const out: { type: NodeType; label: string; count: number; lanes: number;
-                 cards: Placed[]; off: Card[] }[] = [];
-    for (const type of ROW_ORDER) {
-      const members = dated.filter((d) => d.node.type === type);
-      if (!members.length) continue;
-      /* A step with no date anywhere in the record cannot go on a time axis at
-         all. Putting it at the start would be a claim about when it happened, so
-         it goes in a strip of its own beside the axis instead. */
-      const off = members.filter((d) => !d.when);
-      /**
-       * Within one day the axis cannot separate two steps, so the pipeline order
-       * does. Not the clock: sample S-6 is recorded as collected at 14:35 and
-       * registered at pathology at 09:55 on the same day, and sorting by the
-       * clock would put pathology first, which cannot have happened. The order a
-       * sample must pass through is the thing we actually know; the clock is a
-       * form field with nothing keeping it consistent. So the pipeline places
-       * the cards, the clock is shown on them, and a disagreement between the
-       * two is flagged rather than silently obeyed.
-       */
-      const timed = members.filter((d) => d.when)
-        .map((d, i) => ({ ...d, seq: i }))
-        .sort((a, b) => (xOf(a.when) - xOf(b.when)) || (a.seq - b.seq));
-      const laneEnds: number[] = [];
-      const cards = timed.map((card) => {
-        const x = xOf(card.when);
-        let lane = laneEnds.findIndex((end) => end <= x);
-        if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
-        laneEnds[lane] = x + CARD_W + 8;
-        return { ...card, x, lane };
-      });
-      out.push({
-        type, label: TYPE_LABEL[type] ?? type, count: members.length,
-        lanes: Math.max(1, laneEnds.length), cards, off,
-      });
+    const of = (type: NodeType, group: number | null) =>
+      dated.filter((d) => d.node.type === type && d.group === group);
+    const out: (Row | null)[] = [];
+    if (!grouped) {
+      for (const type of ROW_ORDER) out.push(rowOf(type, type, null, of(type, null)));
+    } else {
+      out.push(rowOf('patient', 'patient', null, of('patient', null)));
+      const groups = [...samples.map((s) => s.id),
+                      ...(dated.some((d) => d.group === -1) ? [-1] : [])];
+      for (const group of groups) {
+        for (const type of BLOCK_ORDER) {
+          out.push(rowOf(`${group}:${type}`, type, group, of(type, group)));
+        }
+      }
+      out.push(rowOf('mtb', 'mtb', null, of('mtb', null)));
     }
-    return out;
+    return out.filter((r): r is Row => r !== null);
   });
+
+  /** What a block is called, above its first row and in the list of undated steps. */
+  function groupName(group: number | null): string {
+    if (group == null) return '';
+    if (group === -1) return 'Not tied to one sample';
+    const s = model?.nodes[group];
+    return s ? `${TYPE_LABEL.sample} ${s.label}${s.stype ? ` · ${s.stype}` : ''}` : '';
+  }
 
   /**
    * Steps whose recorded time runs backwards against the pipeline order.
@@ -248,12 +361,14 @@
    * timing deviation is already one of the four classes this study records.
    */
   const outOfOrder = $derived.by(() => {
-    const bad = new Set<number>();
-    let prev: { when: string; time: string } | null = null;
+    const bad = new Set<string>();
+    /* compared within one sample: two samples' steps are not one sequence */
+    const prev = new Map<number | null, { when: string; time: string }>();
     for (const step of dated) {
       if (!step.when || !step.time) continue;
-      if (prev && prev.when === step.when && step.time < prev.time) bad.add(step.node.id);
-      prev = { when: step.when, time: step.time };
+      const before = prev.get(step.group);
+      if (before && before.when === step.when && step.time < before.time) bad.add(step.key);
+      prev.set(step.group, { when: step.when, time: step.time });
     }
     return bad;
   });
@@ -263,7 +378,12 @@
   /* A row whose every step is undated has nothing to draw on the axis, and an
      empty band with a label beside it reads as a gap in the record rather than
      as steps listed underneath. */
-  const bands = $derived(rows.filter((r) => r.cards.length));
+  const bands = $derived(rows.filter((r) => r.cards.length).map((row, i, all) => ({
+    ...row,
+    /* the first drawn row of each sample's block carries the block's name */
+    head: row.group != null && (i === 0 || all[i - 1].group !== row.group)
+      ? groupName(row.group) : null,
+  })));
 
   /**
    * How tall each card turned out to be, once its text was laid out.
@@ -273,25 +393,25 @@
    * a dialog that has just opened, which nobody sees, and it is the price of
    * never cutting a word off.
    */
-  let heights = $state<Record<number, number>>({});
-  const heightOf = (id: number) => Math.max(MIN_CARD_H, heights[id] ?? MIN_CARD_H);
+  let heights = $state<Record<string, number>>({});
+  const heightOf = (key: string) => Math.max(MIN_CARD_H, heights[key] ?? MIN_CARD_H);
 
   /** Where each lane starts inside its row, and how tall the row therefore is. */
   const layout = $derived.by(() => {
-    const out = new Map<NodeType, { tops: number[]; height: number }>();
+    const out = new Map<string, { tops: number[]; height: number }>();
     for (const row of rows) {
       const laneH: number[] = Array(row.lanes).fill(MIN_CARD_H);
-      for (const c of row.cards) laneH[c.lane] = Math.max(laneH[c.lane], heightOf(c.node.id));
+      for (const c of row.cards) laneH[c.lane] = Math.max(laneH[c.lane], heightOf(c.key));
 
       const tops: number[] = [];
       let y = 0;
       for (let i = 0; i < laneH.length; i++) { tops[i] = y; y += laneH[i] + LANE_GAP; }
-      out.set(row.type, { tops, height: Math.max(0, y - LANE_GAP) });
+      out.set(row.key, { tops, height: Math.max(0, y - LANE_GAP) });
     }
     return out;
   });
-  const topOf = (type: NodeType, lane: number) => layout.get(type)?.tops[lane] ?? 0;
-  const heightOfRow = (type: NodeType) => layout.get(type)?.height ?? MIN_CARD_H;
+  const topOf = (row: string, lane: number) => layout.get(row)?.tops[lane] ?? 0;
+  const heightOfRow = (row: string) => layout.get(row)?.height ?? MIN_CARD_H;
 
   /**
    * How long each fraction was away.
@@ -307,7 +427,7 @@
         .filter((c) => c.node.sent_on && c.node.returned_on
                        && c.node.returned_on > (c.when ?? ''))
         .map((c) => ({
-          id: c.node.id, lane: c.lane, x: c.x,
+          id: c.key, row: row.key, lane: c.lane, x: c.x,
           w: Math.max(0, xOf(c.node.returned_on!) - c.x),
           days: days(c.when!, c.node.returned_on!),
         }))));
@@ -399,13 +519,18 @@
       <div>
         <p class="eyebrow">The whole path, on one time axis</p>
         <h2>
-          {sample ? `${TYPE_LABEL.sample} ${sample.label}` : node.label}
-          {#if sample?.stype}<span class="qual">· {sample.stype}</span>{/if}
+          {#if grouped && patient}
+            {TYPE_LABEL.patient} {patient.label}
+            <span class="qual">· {samples.length} samples</span>
+          {:else}
+            {sample ? `${TYPE_LABEL.sample} ${sample.label}` : node.label}
+            {#if sample?.stype}<span class="qual">· {sample.stype}</span>{/if}
+          {/if}
         </h2>
       </div>
       <div class="totals">
         {#if elapsed !== null}<span><b>{elapsed}</b> days end to end</span>{/if}
-        <span><b>{dated.length}</b> steps</span>
+        <span><b>{steps.length}</b> steps</span>
         {#if slowest >= SLOW_DAYS}
           <span class="slow">longest wait <b>{slowest}</b> days</span>
         {/if}
@@ -426,8 +551,10 @@
         <div class="chart">
           <div class="gutter" aria-hidden="true">
             <div class="axislabel">date{years.length === 1 ? ` · ${years[0]}` : ''}</div>
-            {#each bands as row}
-              <div class="rowlabel" style="height:{heightOfRow(row.type)}px">
+            {#each bands as row (row.key)}
+              {#if row.head}<div class="blockhead">{row.head}</div>{/if}
+              <div class="rowlabel" class:inblock={row.group != null}
+                   style="height:{heightOfRow(row.key)}px">
                 <span class="swatch" style="background:{COLORS[row.type] ?? '#8ea0ba'}"></span>
                 {row.label}
                 <span class="n">{row.count}</span>
@@ -450,24 +577,25 @@
               {/each}
             </div>
 
-            {#each bands as row}
-              <div class="band" style="height:{heightOfRow(row.type)}px">
+            {#each bands as row (row.key)}
+              {#if row.head}<div class="blockline"></div>{/if}
+              <div class="band" style="height:{heightOfRow(row.key)}px">
                 {#each ticks as tick}
                   <div class="grid" style="left:{tick.x}px"></div>
                 {/each}
                 {#if row.type === 'aliquot'}
-                  {#each outAndBack as bar (bar.id)}
+                  {#each outAndBack.filter((b) => b.row === row.key) as bar (bar.id)}
                     <div class="outbar"
                          style="left:{bar.x}px; width:{bar.w}px;
-                                top:{topOf('aliquot', bar.lane) + MIN_CARD_H / 2 - 3}px"
+                                top:{topOf(row.key, bar.lane) + MIN_CARD_H / 2 - 3}px"
                          title="away at the platform for {bar.days} days">
                       <span class="cap"></span>
                     </div>
                   {/each}
                 {/if}
-                {#each row.cards as card (card.node.id)}
-                  <div class="card" bind:clientHeight={heights[card.node.id]}
-                       style="left:{card.x}px; top:{topOf(row.type, card.lane)}px;
+                {#each row.cards as card (card.key)}
+                  <div class="card" bind:clientHeight={heights[card.key]}
+                       style="left:{card.x}px; top:{topOf(row.key, card.lane)}px;
                               --c:{COLORS[card.node.type] ?? '#8ea0ba'}">
                     <div class="name">{card.node.label}</div>
                     {#if card.detail}<div class="detail">{card.detail}</div>{/if}
@@ -478,7 +606,7 @@
                       {#if card.node.stalled_days}
                         <span class="flag bad">{card.node.stalled_days} d</span>
                       {/if}
-                      {#if outOfOrder.has(card.node.id)}
+                      {#if outOfOrder.has(card.key)}
                         <span class="flag bad"
                               title="The clock time recorded for this step is earlier in the day than the one recorded for the step above it, which the pipeline says came first.">earlier than the step above</span>
                       {/if}
@@ -500,7 +628,7 @@
         <p class="notdated">
           <b>Not dated in the record:</b>
           {#each rows.filter((r) => r.off.length) as row, i}
-            {i > 0 ? ' · ' : ''}{row.label}
+            {i > 0 ? ' · ' : ''}{row.group != null ? `${groupName(row.group)}, ` : ''}{row.label}
             {#each row.off as card, j}
               {j > 0 ? ', ' : ' '}<span class="who">{card.node.label}</span
               >{card.detail ? ` (${card.detail})` : ''}
@@ -509,7 +637,14 @@
         </p>
       {/if}
 
-      {#if sample?.deviations?.length}
+      {#if grouped}
+        {#each samples.filter((s) => s.deviations?.length) as s (s.id)}
+          <p class="devs">
+            <b>Deviations recorded at pathology for {s.label}:</b>
+            {s.deviations?.join(' · ')}
+          </p>
+        {/each}
+      {:else if sample?.deviations?.length}
         <p class="devs">
           <b>Deviations recorded at pathology:</b>
           {sample.deviations.join(' · ')}
@@ -521,6 +656,11 @@
         three fractions of the one sample, which is why they share a column. The
         dashed bar behind a fraction runs from the day it was sent to the day its
         results came back, and the dot marks the return.
+        {#if grouped}
+          Each sample has its own block of rows, so every step and fraction sits
+          with the sample it came from. A platform that analysed more than one of
+          these samples appears in each of their blocks.
+        {/if}
 
       </p>
     {/if}
@@ -563,18 +703,37 @@
   /* the row names stay put while the axis scrolls under them */
   .gutter { position: sticky; left: 0; z-index: 2; flex: 0 0 128px;
             background: var(--panel); }
-  .axislabel { height: 34px; display: flex; align-items: flex-end; padding-bottom: 6px;
-               font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  /* the same height and gap as .axis, so each name lines up with its band */
+  .axislabel { height: 38px; margin-bottom: 10px; display: flex; align-items: flex-end;
+               padding-bottom: 6px; font-size: 10px; font-weight: 700; letter-spacing: .06em;
                text-transform: uppercase; color: var(--muted); }
   .rowlabel { display: flex; align-items: center; gap: 6px; font-size: 12px;
               font-weight: 700; color: var(--ink); margin-bottom: 12px; }
+  /* Every other row is shaded, name and band together. Without it the names read
+     as a legend rather than as the labels of the rows beside them. The shadow's
+     spread is half the 12px gap on every side, so the label's shading and the
+     band's shading meet across the gutter and stack without seams. */
+  .rowlabel:nth-child(even), .band:nth-child(even) {
+    background: var(--bg); box-shadow: 0 0 0 6px var(--bg); }
+  /* A block's name, and the rule across the plot level with it. Both are the
+     same height, so the rows under them stay aligned with their bands. */
+  .blockhead, .blockline { height: 24px; margin: 4px 0 8px; }
+  .blockhead { display: flex; align-items: flex-end; padding-bottom: 3px;
+               font-size: 11px; font-weight: 700; letter-spacing: .04em;
+               text-transform: uppercase; color: var(--muted);
+               border-bottom: 2px solid var(--border);
+               /* the name may run on over the rule beside it rather than wrap */
+               white-space: nowrap; overflow: visible; }
+  .blockline { border-bottom: 2px solid var(--border); }
+  .rowlabel.inblock { padding-left: 10px; }
   .rowlabel .swatch { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
   .rowlabel .n { margin-left: auto; color: var(--muted); font-weight: 600; font-size: 11px; }
 
   .plot { position: relative; flex: 0 0 auto; }
   /* A visible spine, not just a boundary. The events hang off this line, so it
      is drawn as a line rather than left implicit in the gap above the rows. */
-  .axis { position: relative; height: 38px; border-bottom: 2px solid #9aa8bd; }
+  .axis { position: relative; height: 38px; margin-bottom: 10px;
+          border-bottom: 2px solid #9aa8bd; }
   .tick { position: absolute; bottom: -4px; width: 2px; height: 10px;
           background: #9aa8bd; border-radius: 1px; }
   .tick span { position: absolute; bottom: 8px; left: 0; font-size: 10px;

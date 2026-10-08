@@ -73,10 +73,16 @@ const layer = (name) => page.evaluate((label) => {
   [...document.querySelectorAll('#layerbox .layerrow')]
     .find((r) => r.textContent.trim().startsWith(label)).querySelector('.eye').click();
 }, name);
-/* Reset lived in the highlight panel, which is gone. Clicking the dark
-   background clears the same two sets, so that is the way back. */
+/* Reset lived in the highlight panel, which is gone. While a family, a path or
+   a lit type is up, an empty-canvas click deliberately keeps it, so the Clear
+   selection button is the way back. With nothing lit, the button is absent and
+   a click on the dark background clears the selection instead. */
 const clearAll = async () => {
-  await page.evaluate(() => { const cy = window.__cy; cy.emit({ type: 'tap', target: cy }); });
+  await page.evaluate(() => {
+    const button = document.querySelector('.clearsel');
+    if (button) button.click();
+    else { const cy = window.__cy; cy.emit({ type: 'tap', target: cy }); }
+  });
   await settle(400);
 };
 
@@ -452,10 +458,15 @@ const both = await bright();
 check('a second double-click narrows to what they have in common',
       both.count < family.count, `${family.count} → ${both.count}`);
 
-/* clicking the dark background is the way back to the whole picture */
+/* Most of the canvas is faded and unclickable while a family is lit, so a stray
+   click on it must not throw the highlight away. Clear selection ends it. */
 await page.evaluate(() => { const cy = window.__cy; cy.emit({ type: 'tap', target: cy }); });
 await settle(500);
-check('clicking empty canvas clears the highlight',
+check('clicking empty canvas keeps the highlight',
+      (await page.evaluate(() => window.__cy.nodes('.faded').length)) > 0);
+await page.click('.clearsel');
+await settle(500);
+check('Clear selection clears the highlight',
       (await page.evaluate(() => window.__cy.nodes('.faded').length)) === 0);
 
 /* the sun beside a type lights every node of that type at once */
@@ -513,9 +524,9 @@ await settle(300);
 const menu = await page.$$eval('.ctx button', (bs) => bs.map((b) => b.textContent.trim()));
 check('the menu no longer offers "Add to highlight"',
       !menu.some((t) => /to highlight$/.test(t)), menu.join(' / '));
-check('but it still traces and highlights a family',
-      menu.some((t) => /Trace the whole path/.test(t))
-      && menu.some((t) => /Highlight its family/.test(t)), menu.join(' / '));
+check('it offers Highlight path and nothing about families or hiding types',
+      menu.some((t) => /Highlight path/.test(t))
+      && !menu.some((t) => /Highlight its family|Hide every/.test(t)), menu.join(' / '));
 await page.keyboard.press('Escape');
 await clearAll();
 
@@ -551,8 +562,7 @@ await layer('Identifier');
 await settle(1500);
 
 // ---- the agreed interaction conventions
-await page.evaluate(() => { const cy = window.__cy; cy.emit({ type: 'tap', target: cy }); });
-await settle(400);
+await clearAll();
 await page.evaluate(() => {
   window.__cy.nodes().not('.hidden').filter((n) => n.data('type') === 'sample')[0].emit('tap');
 });
@@ -572,11 +582,11 @@ await page.evaluate(() => {
 await settle(400);
 const items = await page.$$eval('.ctx button', (b) => b.map((x) => x.textContent.trim()));
 check('right-click opens a menu with the commands that cannot fit on a gesture',
-      items.some((i) => /whole path/.test(i)) && items.some((i) => /come from/.test(i))
-      && items.some((i) => /became of it/.test(i)), items.join(' | '));
+      items.some((i) => /Highlight path/.test(i)) && !items.some((i) => /Node history/.test(i)),
+      items.join(' | '));
 
 await page.evaluate(() => [...document.querySelectorAll('.ctx button')]
-  .find((b) => b.textContent.includes('whole path')).click());
+  .find((b) => b.textContent.includes('Highlight path')).click());
 await page.waitForFunction(() => !document.querySelector('.resettle'), { timeout: 40000 });
 await settle(600);
 const lineage = await page.evaluate(() => {
@@ -717,8 +727,7 @@ const hulls = await page.evaluate(() => {
 check('the outcome hulls are drawn', hulls > 2000, `${hulls} px painted`);
 
 /* The clustered views are balls in three dimensions, not flat discs, so they
-   turn like the other two — turning is how you see inside a group of 503. Only
-   Layered stays flat: its left-to-right axis is the one thing it says. */
+   turn like the other two — turning is how you see inside a group of 503. */
 check('the clustered view can be turned',
       await page.$eval('.spinsw', (el) => el.disabled) === false);
 const spun = async () => {
@@ -735,14 +744,9 @@ await settle(1200);
 check('so can grouped by type', await page.$eval('.spinsw', (el) => el.disabled) === false);
 check('and it turns too', await spun());
 
-await layoutBtn('Layered');
-await settle(1200);
-check('the pipeline view stays flat',
-      await page.$eval('.spinsw', (el) => el.disabled) === true);
-
 await layoutBtn('Shell');
 await settle(900);
-check('and turning comes back in the shell',
+check('and the shell can be turned',
       await page.$eval('.spinsw', (el) => el.disabled) === false);
 
 // ---- the whole path, as a straight line
@@ -775,7 +779,9 @@ await page.evaluate(() => {
 });
 await settle(400);
 await page.evaluate(() => [...document.querySelectorAll('.ctx button')]
-  .find((b) => b.textContent.includes('Trace the whole path')).click());
+  .find((b) => b.textContent.includes('Highlight path')).click());
+await settle(400);
+await page.click('.historybtn');
 await settle(700);
 
 const win = await page.evaluate(() => {
@@ -929,8 +935,8 @@ await page.keyboard.press('Escape');
 await settle(300);
 check('escape closes it', (await page.$$('.win')).length === 0);
 
-/* "where did this come from" is a partial question — answering it with a window
-   titled "the whole path" would be a lie */
+/* "highlight path" lights the chain in place: no window, and the filters stay
+   as they were */
 await clearAll();
 await page.evaluate(() => {
   const cy = window.__cy;
@@ -939,10 +945,22 @@ await page.evaluate(() => {
 });
 await settle(400);
 await page.evaluate(() => [...document.querySelectorAll('.ctx button')]
-  .find((b) => b.textContent.includes('Where did this come from')).click());
+  .find((b) => b.textContent.includes('Highlight path')).click());
 await settle(600);
-check('a partial trace does not claim to be the whole path',
+check('highlight path does not open the history window',
       (await page.$$('.win')).length === 0);
+check('highlight path lights the chain',
+      await page.evaluate(() => window.__cy.nodes('.bright').length) > 1);
+check('the nodes of a highlighted path carry no gold ring',
+      await page.evaluate(() => window.__cy.nodes('.marked').length) === 0);
+check('a highlighted path offers its full history',
+      (await page.$('.historybtn')) !== null);
+await page.click('.historybtn');
+await settle(600);
+check('the history button opens the timeline', (await page.$$('.win')).length === 1);
+await page.click('.win .x');
+await settle(400);
+check('its close button goes back to the graph', (await page.$$('.win')).length === 0);
 await clearAll();
 
 // ---- the way back is a button, not a gesture

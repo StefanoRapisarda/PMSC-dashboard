@@ -53,19 +53,41 @@ export class Force3D {
     return this.seed / 0x7fffffff;
   };
 
-  reset(nodeIds: number[], edges: Edge3[]) {
+  /**
+   * `warm` keeps every node that was already placed where it was, and starts a
+   * newcomer next to a placed neighbour. Switching a node type on then adds
+   * those nodes to the picture instead of scattering and re-settling all of it.
+   */
+  reset(nodeIds: number[], edges: Edge3[], warm = false) {
+    const previous = new Map<number, Body>();
+    if (warm) this.index.forEach((id, i) => previous.set(id, this.bodies[i]));
+
     this.slot.clear();
     this.index = nodeIds;
     nodeIds.forEach((id, i) => this.slot.set(id, i));
 
-    this.radius = Math.max(330, Math.min(2600, 34 * Math.sqrt(nodeIds.length || 1)));
+    if (!warm) this.radius = Math.max(330, Math.min(2600, 34 * Math.sqrt(nodeIds.length || 1)));
     const world = this.radius / 360;
-    this.bodies = nodeIds.map(() => ({
-      x: (this.rnd() - 0.5) * 320 * world,
-      y: (this.rnd() - 0.5) * 320 * world,
-      z: (this.rnd() - 0.5) * 320 * world,
-      vx: 0, vy: 0, vz: 0,
-    }));
+    const neighbour = new Map<number, Body>();
+    if (warm) {
+      for (const edge of edges) {
+        const pa = previous.get(edge.a), pb = previous.get(edge.b);
+        if (pa && !pb && !neighbour.has(edge.b)) neighbour.set(edge.b, pa);
+        if (pb && !pa && !neighbour.has(edge.a)) neighbour.set(edge.a, pb);
+      }
+    }
+    this.bodies = nodeIds.map((id) => {
+      const kept = previous.get(id);
+      if (kept) return { ...kept, vx: 0, vy: 0, vz: 0 };
+      const near = neighbour.get(id);
+      const spread = near ? 20 : 320 * world;
+      return {
+        x: (near?.x ?? 0) + (this.rnd() - 0.5) * spread,
+        y: (near?.y ?? 0) + (this.rnd() - 0.5) * spread,
+        z: (near?.z ?? 0) + (this.rnd() - 0.5) * spread,
+        vx: 0, vy: 0, vz: 0,
+      };
+    });
 
     this.edges = [];
     for (const edge of edges) {
@@ -78,7 +100,8 @@ export class Force3D {
     /* cell size tracks the longest spring, so a "loose" edge still finds its
        partner inside the neighbourhood search */
     this.cell = 110;
-    this.alpha = 1;
+    /* a warm start only has to fit the newcomers in, not untangle everything */
+    this.alpha = warm ? 0.3 : 1;
     this.ticks = 0;
     this.settled = false;
   }

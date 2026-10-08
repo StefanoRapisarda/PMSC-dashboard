@@ -9,10 +9,14 @@ export type NodeType =
   | 'study' | 'patient' | 'identifier' | 'sample' | 'activity' | 'operator'
   | 'aliquot' | 'qc' | 'deviation' | 'platform' | 'storage' | 'mtb';
 
+/* One departure from v3. Its platform colour (#4cc9f0) sat only 20 degrees of
+   hue from the sample teal, and on the dark canvas, at dot size and with the
+   depth fading applied, the two could not be told apart. Platforms are now a
+   deeper blue, which keeps them in the same family while reading as different. */
 export const COLORS: Record<NodeType, string> = {
   study: '#b15dff', patient: '#ff6b9d', identifier: '#ff9f1c', sample: '#2ec4b6',
   activity: '#c98a5e', operator: '#b0bccb', aliquot: '#e9c46a', qc: '#7c6df2',
-  deviation: '#e76f51', platform: '#4cc9f0', storage: '#94a7bd', mtb: '#b15dff',
+  deviation: '#e76f51', platform: '#3a86ff', storage: '#94a7bd', mtb: '#b15dff',
 };
 
 /** v3's radii, doubled for Cytoscape which sizes by diameter. */
@@ -123,17 +127,69 @@ export const SPRING: Record<string, { L: number; k: number }> = {
 };
 export const SPRING_DEFAULT = { L: 70, k: 0.030 };
 
-/** Column per type in the layered ("pipeline") view — v3's left-to-right axis. */
-export const LAYERED_COLUMN: Record<string, number> = {
-  study: 0, patient: 1, identifier: 1, sample: 2, activity: 2, deviation: 2,
-  aliquot: 3, qc: 3, platform: 4, storage: 4, mtb: 5,
-};
-
-export const LAYERED_HEADING: Record<number, string> = {
-  1: 'PATIENT', 2: 'SAMPLE', 3: 'ALIQUOT', 4: 'PLATFORM', 5: 'MTB',
-};
-
 export function hexA(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+/**
+ * What each kind of relation means, in ordinary words.
+ *
+ * An edge in the store carries only its two ends and its type, so everything a
+ * reader learns from clicking one comes from here and from the facts on its two
+ * ends. `says` is written from the source end to the target end, which is the
+ * direction the API stores the edge in. `standard` names a PROV-O property only
+ * where the relation genuinely is one; the rest are this project's own terms and
+ * are not dressed up as anything else.
+ */
+export interface Relation {
+  name: string;
+  says: (a: string, b: string) => string;
+  standard: string | null;
+}
+
+export const RELATION: Record<string, Relation> = {
+  has_sample: { name: 'Gave sample', standard: null,
+    says: (a, b) => `${a} gave the sample ${b}.` },
+  identified_as: { name: 'Known as', standard: null,
+    says: (a, b) => `${a} is known by the identifier ${b}.` },
+  used: { name: 'Step on material', standard: 'PROV-O used',
+    says: (a, b) => `The step ${a} was carried out on ${b}.` },
+  performed: { name: 'Carried out by', standard: 'PROV-O wasAssociatedWith (inverse)',
+    says: (a, b) => `${a} carried out the step ${b}.` },
+  generated: { name: 'Produced', standard: 'PROV-O wasGeneratedBy (inverse)',
+    says: (a, b) => `The step ${a} produced ${b}.` },
+  derived_from: { name: 'Derived from', standard: 'PROV-O wasDerivedFrom',
+    says: (a, b) => `${a} was derived from ${b}.` },
+  stored_at: { name: 'Stored in', standard: null,
+    says: (a, b) => `${a} is stored in ${b}.` },
+  contains: { name: 'Contains', standard: null,
+    says: (a, b) => `${a} holds ${b}.` },
+  submitted_to: { name: 'Sent for analysis', standard: null,
+    says: (a, b) => `${a} was sent to ${b} for analysis.` },
+  has_mtb: { name: 'Reached the tumour board', standard: null,
+    says: (a, b) => `The results from ${a} reached ${b}.` },
+  enrolled: { name: 'Enrolled by', standard: null,
+    says: (a, b) => `${a} enrolled the patient ${b} in the study.` },
+  repeat_of: { name: 'Repeat collection', standard: null,
+    says: (a, b) => `${a} is a repeat collection of ${b}, recorded as a new REDCap record.` },
+  BRIDGE: { name: 'Hidden steps', standard: null,
+    says: (a, b) => `${a} leads to ${b} through steps whose layer is switched off.` },
+};
+
+/**
+ * How tightly a relation holds its two ends together in the force view, read
+ * from the rest length in SPRING so that the sentence and the physics cannot
+ * drift apart.
+ */
+export function relationTier(type: string): { tier: string; meaning: string } | null {
+  const spring = SPRING[type];
+  if (!spring) return null;
+  if (spring.L <= 40) return { tier: 'tight',
+    meaning: 'This is a fact about one object, so the force view pulls its two ends close together.' };
+  if (spring.L <= 100) return { tier: 'family',
+    meaning: 'This joins members of one family, so its two ends sit a moderate distance apart.' };
+  return { tier: 'loose',
+    meaning: 'This links to shared context. The spring is long and weak, so the shared end '
+           + 'settles between the families it serves rather than inside one.' };
 }

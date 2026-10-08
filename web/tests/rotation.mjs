@@ -135,15 +135,6 @@ check('play overrides the selection hold', (await spinLabel()) === '⏸ Rotation
 await tapCanvas();
 await new Promise((r) => setTimeout(r, 300));
 
-/* rotation is meaningless in the flat layouts, so the control is disabled */
-await layoutBtn('Layered');
-await new Promise((r) => setTimeout(r, 900));
-const disabled = await page.$eval('.spinsw', (el) => el.disabled);
-check('rotation disabled in the layered view', disabled === true);
-
-const layeredHud = await page.$eval('.hud', (el) => el.textContent);
-check('layered view drops the rotate hint', !layeredHud.includes('drag to rotate'));
-
 await layoutBtn('Force');      // back to Force
 await page.waitForFunction(
   () => (document.querySelector('.hud')?.textContent ?? '').includes('settled'),

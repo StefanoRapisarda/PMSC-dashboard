@@ -212,6 +212,21 @@ export class GraphModel {
    * the DNA's history; both are descendants of the specimen, so selecting the
    * specimen includes them and selecting one aliquot does not.
    */
+  /**
+   * A set of nodes plus what describes them: their identifiers, the box they are
+   * stored in and the operator who handled them. This is one hop only. The box
+   * itself is added, never the other things stored in it.
+   */
+  withAttachments(ids: Set<number>): Set<number> {
+    const out = new Set(ids);
+    for (const edge of this.edges) {
+      if (!ATTACHED.has(edge.type)) continue;
+      if (ids.has(edge.a)) out.add(edge.b);
+      if (ids.has(edge.b)) out.add(edge.a);
+    }
+    return out;
+  }
+
   lineage(node: GraphNode, direction: 'both' | 'up' | 'down' = 'both'): Set<number> {
     const forward: Record<number, number[]> = {};
     const backward: Record<number, number[]> = {};
@@ -369,6 +384,9 @@ export const SPINE: Record<string, boolean> = {
   used: true, derived_from: true,
 };
 
+/** Edges that describe a node rather than continue its chain. */
+export const ATTACHED = new Set(['identified_as', 'stored_at', 'performed', 'enrolled']);
+
 /** An edge standing in for one or more hidden steps of the chain. */
 export interface Bridge { a: number; b: number; via: string[]; }
 
@@ -492,12 +510,24 @@ export function project(model: GraphModel, facets: Facets): Projection {
   bridges.forEach((b) => { bridged.add(b.a); bridged.add(b.b); });
   const attachments = ['platform', 'mtb', 'operator', 'storage', 'identifier',
                        'qc', 'deviation'];
+  const pruned = new Map<string, number[]>();
   for (const id of [...visible]) {
     const node = model.nodes[id];
     if (!attachments.includes(node.type)) continue;
     if (bridged.has(id)) continue;
     const connected = (model.adj[id] ?? []).some((link) => visible.has(link.o));
-    if (!connected) visible.delete(id);
+    if (!connected) {
+      visible.delete(id);
+      (pruned.get(node.type) ?? pruned.set(node.type, []).get(node.type)!).push(id);
+    }
+  }
+  /* A type that is switched on but would vanish entirely stays on screen,
+     unconnected. Showing only operators is a question about operators, and an
+     empty canvas answers it with nothing. */
+  for (const [type, ids] of pruned) {
+    if (![...visible].some((id) => model.nodes[id].type === type)) {
+      ids.forEach((id) => visible.add(id));
+    }
   }
 
   const kept = bridges.filter((b) => visible.has(b.a) && visible.has(b.b));

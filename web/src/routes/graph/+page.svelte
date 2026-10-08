@@ -12,7 +12,7 @@
   import Inspector from '$lib/components/Inspector.svelte';
   import PathWindow from '$lib/components/PathWindow.svelte';
   import {
-    drawHulls, mount, runLayout, setInteraction, toElements, type Layout,
+    drawHulls, mount, setInteraction, toElements, type EdgePick, type Layout,
   } from '$lib/graph/cy';
   import { Rotator, type RotatorState } from '$lib/graph/rotator';
   import { clusterPlacement } from '$lib/graph/clusters';
@@ -21,7 +21,8 @@
            type Caption } from '$lib/graph/export';
   import { GraphModel, project, type Facets, type Projection } from '$lib/graph/model';
   import {
-    ACTIVITY_LABEL, ACTIVITY_ORDER, COLORS, DESCRIPTION, ONTOLOGY, TYPE_LABEL, TYPE_ORDER,
+    ACTIVITY_LABEL, ACTIVITY_ORDER, COLORS, DESCRIPTION, ONTOLOGY, RELATION, TYPE_LABEL,
+    TYPE_ORDER,
   } from '$lib/graph/v3';
   import type { GraphNode, GraphPayload } from '$lib/types';
 
@@ -55,6 +56,19 @@
   let rotation = $state<RotatorState>({ settling: true, first: true, progress: 0,
                                         spinning: true, nodes: 0 });
   let selected = $state<GraphNode | null>(null);
+  /* A picked relation. It and `selected` never hold at once: the panel
+     describes one thing, and a click on a line is a different thing from a
+     click on a dot. */
+  let selectedEdge = $state<EdgePick | null>(null);
+  /* Bumped each time the filters change what is on screen, so the panel's
+     connection counts are worked out again. The plain counter is what gets
+     incremented: reading the state inside the effect that writes it would make
+     the effect its own dependency. */
+  let visibility = $state(0);
+  let visibilityRuns = 0;
+  /* Whether nodes are drawn at a size that shows how connected they are,
+     instead of the fixed size of their type. */
+  let sizeByDegree = $state(false);
   let hovered = $state<{ node: GraphNode; x: number; y: number } | null>(null);
   let focus = $state<Set<number> | null>(null);
   let expanded = $state<Set<number> | null>(null);
@@ -107,7 +121,15 @@
   $effect(() => {
     if (!container || !payload || cy) return;
     cy = mount(container, toElements(payload.nodes, payload.edges, model), {
-      onSelect: (node) => selectNode(node),
+      /* A click on empty canvas normally goes back to the whole picture. While a
+         traced path, a family or a lit type is up, most of the canvas is faded
+         and cannot be clicked, so a stray click there would throw away a
+         highlight that took a menu to build. Only Clear selection ends it then. */
+      onSelect: (node) => {
+        if (!node && anyHighlight && !picking) return;
+        selectNode(node);
+      },
+      onSelectEdge: (edge) => selectEdge(edge),
       onHighlight: (node) => toggleHighlight(node),
       onMenu: (node, at) => openMenu(node, at),
       onExpand: (node) => highlightNeighbourhood(node),
@@ -145,7 +167,7 @@
        while the rotator is still null on the first run, so the argument is never
        evaluated, `selected` never registers as a dependency, and the effect never
        runs again. */
-    const holding = selected !== null;
+    const holding = selected !== null || selectedEdge !== null;
     rotator?.hold('selection', holding);
     /* only the hold is set here. The rotator publishes the new spin state on its
        next frame — writing `rotation` from an effect that also reads it would
@@ -177,7 +199,7 @@
     layout = next;
     laying = true;
     /* hand position and viewport control to whichever thing owns them here */
-    setInteraction(cy, next);
+    setInteraction(cy);
 
     /* both 3-D views run over the switched-on types only, which is what makes
        the picture legible — and keeps the force settle affordable */
@@ -225,10 +247,8 @@
     }
 
     rotator?.stop();
-    runLayout(cy, next, () => {
-      laying = false;
-      paintOverlay();
-    });
+    laying = false;
+    paintOverlay();
   }
 
   function clearOverlay() {
@@ -289,30 +309,19 @@
     }
   }
 
-  /* Rotation is only meaningful in the two 3-D views. Layered, Grouped and
-     Clustered are flat: turning a flat picture cannot reveal depth there is none
-     of, and in Layered it destroys the left-to-right pipeline axis, which is the
-     one thing that view is for. So the control is disabled there rather than
-     advertising something it does not do. */
-  /* Layered is the one flat view: its left-to-right axis IS the point, and
-     turning it destroys the only thing it says. Everything else lives in three
-     dimensions and can be turned. */
-  const spatial = $derived(layout !== 'layered');
   /* What position means, per layout. Stating it is not decoration: a picture
      where position means something and does not say what invites the reader to
      invent a meaning, and they will pick the wrong one. */
   const LAYOUT_NAME: Record<Layout, string> = {
     force: 'force layout', shell: 'shell by progress', clustered: 'clustered by outcome',
-    grouped: 'grouped by type', layered: 'layered by pipeline',
+    grouped: 'grouped by type',
   };
   const RULE: Record<Layout, string> = {
     shell: 'further in = further along the pipeline · rings are labelled',
     force: 'distance = how tightly two things belong together',
     clustered: 'one ball per outcome — where the material stopped · turn it to see inside',
-    layered: 'left to right = the pipeline, one column per kind of thing',
     grouped: 'one ball per kind of thing · turn it to see inside',
   };
-  const flat = $derived(!spatial);
   /* Covered only while the FIRST layout is being worked out. A re-settle after
      a toggle stays in view — hiding it would hide the very change you asked to
      see. */
@@ -342,6 +351,8 @@
     if (!cy || !model) return;
     const p = project(model, facets);
     projection = p;
+    /* bridges first, so the pass below fades the new ones like every other edge */
+    syncBridges(p);
 
     cy.batch(() => {
       cy!.nodes().forEach((element) => {
@@ -354,11 +365,22 @@
         /* a highlight overrides the trace: it is the more specific thing to
            have asked for. A lit type keeps its nodes bright; only a node you
            picked by hand also gets a ring, or lighting a type of 419 aliquots
-           would cover the canvas in rings. */
+           would cover the canvas in rings. A traced path or a family is the
+           same case: ringing every node in it hides the colours that say what
+           each node is. */
         const bright = isBrightNode(id, element.data('type'));
-        element.toggleClass('marked', highlighted.has(id));
+        element.toggleClass('marked', highlighted.has(id) && !pathOf && !familyOf);
         element.toggleClass('dim', inView && !(bright && focused && expandedIn));
         element.toggleClass('faded', inView && anyHighlight && !bright);
+        /* while picking by hand the rest only steps back, because the next node
+           to pick has to stay visible enough to click */
+        element.toggleClass('receded', inView && picking && !bright);
+        /* What a path, a family or a lit type has faded out is all but invisible,
+           so it must not answer a click or a hover either: a click on an unseen
+           dot would silently swap the panel for something nobody can find on the
+           canvas. Picking by hand is the exception, because there the rest stays
+           visible precisely so the next node can be clicked. */
+        element.toggleClass('inert', inView && anyHighlight && !bright && !picking);
         element.toggleClass('bright', inView && anyHighlight && bright);
       });
       cy!.edges().forEach((edge) => {
@@ -373,10 +395,18 @@
           || (!!expanded && !(expanded.has(a) && expanded.has(b)))));
         edge.toggleClass('faded', shown && anyHighlight && !bothPicked);
         edge.toggleClass('bright', shown && anyHighlight && bothPicked);
+        edge.toggleClass('inert', shown && anyHighlight && !bothPicked && !picking);
       });
     });
 
-    syncBridges(p);
+    visibility = ++visibilityRuns;
+    /* what is connected depends on what is on screen, so sizes follow the filters */
+    if (sizeByDegree) applySizes(true);
+
+    /* a relation whose line a filter just took away is no longer on screen to read */
+    if (selectedEdge && cy.getElementById(selectedEdge.id).filter(':visible').empty()) {
+      selectEdge(null);
+    }
   }
 
   /**
@@ -423,8 +453,7 @@
   $effect(() => {
     const signature = Object.entries(facets.ntype)
       .filter(([, on]) => on).map(([type]) => type).sort().join(',');
-    const owned = layout !== 'layered';
-    if (!cy || !rotator || !owned) { lastVisibleSignature = signature; return; }
+    if (!cy || !rotator) { lastVisibleSignature = signature; return; }
     if (signature === lastVisibleSignature) return;
     lastVisibleSignature = signature;
     relayout(layout, false);
@@ -436,11 +465,76 @@
     /* a click on empty canvas is how you get back to the whole picture */
     if (!node) { clearHighlight(); }
     selected = node;
+    selectEdge(null);
     /* A click selects and shows the panel — nothing more. Dimming the whole
        canvas is a bigger act than a single click should carry, so tracing moved
        to the right-click menu where it can be named. */
     cy?.nodes().removeClass('selected');
     if (node) cy?.getElementById(String(node.id)).addClass('selected');
+  }
+
+  /**
+   * The lines a node has on screen, counted by kind of relation.
+   *
+   * Only lines that are drawn count, so the numbers follow the filters and the
+   * layer toggles: switch Activity off and a sample's steps leave the count. A
+   * dashed bridge counts too, under its own name, because it is on screen
+   * standing in for steps that are not.
+   */
+  function connectionsOf(node: GraphNode): [string, number][] {
+    if (!cy) return [];
+    const counts = new Map<string, number>();
+    cy.getElementById(String(node.id)).connectedEdges().not('.hidden').forEach((edge) => {
+      const type = edge.data('type') as string;
+      counts.set(type, (counts.get(type) ?? 0) + 1);
+    });
+    return [...counts]
+      .map(([type, n]): [string, number] => [RELATION[type]?.name ?? type, n])
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }
+
+  /**
+   * Draw each node at a size that shows how many connections it has on screen.
+   *
+   * The AREA grows with the number of connections, so the diameter grows with
+   * its square root. Scaling the diameter directly would make a node with four
+   * times the connections look sixteen times bigger, and the three platforms,
+   * with hundreds of lines each, would cover the canvas. Even so they are
+   * capped, for the same reason. Only drawn lines count, as on the node card.
+   * The growth was tripled on request, because at a third of this the
+   * difference between ordinary nodes was too small to read.
+   */
+  const SIZE_MIN = 8, SIZE_PER_ROOT = 10.5, SIZE_MAX = 168;
+  function applySizes(on: boolean) {
+    if (!cy) return;
+    cy.batch(() => {
+      cy!.nodes().forEach((element) => {
+        if (!on) { element.removeClass('bydegree'); return; }
+        const degree = element.connectedEdges().not('.hidden').length;
+        const size = Math.min(SIZE_MAX, SIZE_MIN + SIZE_PER_ROOT * Math.sqrt(degree));
+        element.data('size', size);
+        element.addClass('bydegree');
+      });
+    });
+  }
+
+  function toggleSizes() {
+    sizeByDegree = !sizeByDegree;
+    applySizes(sizeByDegree);
+  }
+
+  /** A click on a line: describe the relation and mark the two things it joins. */
+  function selectEdge(edge: EdgePick | null) {
+    cy?.edges('.selected').removeClass('selected');
+    cy?.nodes('.edge-end').removeClass('edge-end');
+    selectedEdge = edge;
+    if (!edge) return;
+    familyOf = null;
+    selected = null;
+    cy?.nodes().removeClass('selected');
+    cy?.getElementById(edge.id).addClass('selected');
+    cy?.getElementById(String(edge.a)).addClass('edge-end');
+    cy?.getElementById(String(edge.b)).addClass('edge-end');
   }
 
   /**
@@ -460,6 +554,7 @@
       highlighted = new Set([...highlighted].filter((id) => around.has(id)));
     }
     selected = node;
+    selectEdge(null);
     familyOf = node;
     focus = null;
     expanded = null;
@@ -467,10 +562,15 @@
 
   /** Shift-click adds or removes a node from the highlight. */
   function toggleHighlight(node: GraphNode) {
-    const next = new Set(highlighted);
+    /* picking starts a fresh set rather than adding to a traced path or family */
+    const fresh = pathOf !== null || familyOf !== null;
+    pathOf = null;
+    familyOf = null;
+    const next = fresh ? new Set<number>() : new Set(highlighted);
     if (next.has(node.id)) next.delete(node.id); else next.add(node.id);
     highlighted = next;
     selected = node;
+    selectEdge(null);
   }
 
   function toggleLit(type: string) {
@@ -502,6 +602,7 @@
   function openMenu(node: GraphNode | null, at: { x: number; y: number }) {
     if (!node) return;
     selected = node;
+    selectEdge(null);
     menu = { node, x: at.x, y: at.y };
   }
 
@@ -519,21 +620,24 @@
    * path, "where did this come from", and "what became of it". None of them
    * fits on a gesture, which is why they live on a menu that can name them.
    */
-  function tracePath(node: GraphNode, direction: 'both' | 'up' | 'down') {
+  /**
+   * Light the whole chain a node belongs to, upstream and downstream.
+   *
+   * The filters stay exactly as they are, so only the part of the chain that the
+   * current filters show lights up. The full history, as a timeline, is one
+   * button away once the path is lit.
+   */
+  function tracePath(node: GraphNode) {
     if (!model) return;
-    highlighted = model.lineage(node, direction);
+    /* the identifiers, boxes and operators come along, so switching one of
+       those types on shows this path's own and not a faded crowd */
+    highlighted = model.withAttachments(model.lineage(node));
     pathOf = node;
     selected = node;
+    selectEdge(null);
     menu = null;
-    /* a path that ran through a switched-off layer would show gaps, so the
-       layers it needs come on with it */
-    facets.ntype.activity = true;
     /* a trace is a chain, not a family — the panel lists it as a path instead */
     familyOf = null;
-    /* The whole path is a workflow, so it opens as one. Up and down are partial
-       questions — "where did this come from" — and answering those with a window
-       titled "the whole path" would be a lie; they light the chain in place. */
-    if (direction === 'both') pathWindow = node;
   }
 
   /**
@@ -566,6 +670,8 @@
           + ` · ${projection?.specimens ?? 0} samples`
           + (anyHighlight ? ` · ${brightCount} highlighted` : ''),
         offTypeLine,
+        ...(sizeByDegree
+          ? ['Node size shows how many connections each node has on screen'] : []),
         narrowed.length ? `Also filtered out: ${narrowed.join('; ')}` : 'No other filters applied',
         `Synthetic PreDDLung cohort · exported ${new Date().toISOString().slice(0, 10)}`,
       ],
@@ -593,11 +699,12 @@
   /** Undo a pan: frame the graph again. Nothing about the layout changes — only
       where the camera is pointing — so this is safe to press at any time. */
   function recentre() {
-    if (layout !== 'layered') rotator?.fit();
-    else cy?.fit(undefined, 40);
+    rotator?.fit();
   }
 
   const anyHighlight = $derived(highlighted.size > 0 || lit.size > 0);
+  /* a set picked by hand, as opposed to a traced path, a family or a lit type */
+  const picking = $derived(highlighted.size > 0 && !pathOf && !familyOf && lit.size === 0);
   /* The lit family, as nodes, for the panel. Only what is actually on screen:
      the family reaches through layers that may be switched off, and describing
      something the reader cannot see is how the panel got confusing in the first
@@ -771,13 +878,11 @@
             <b>{bridgeCount}</b> bridged</span>
         {/if}
         <span class="rule">{RULE[layout]}</span>
-        {#if !flat}
-          <span class="state">
-            {rotation.settling && rotation.first
-              ? `settling… ${Math.round(rotation.progress * 100)}%`
-              : !rotation.settling ? `settled · ${rotation.nodes} placed` : ''}
-          </span>
-        {/if}
+        <span class="state">
+          {rotation.settling && rotation.first
+            ? `settling… ${Math.round(rotation.progress * 100)}%`
+            : !rotation.settling ? `settled · ${rotation.nodes} placed` : ''}
+        </span>
       {/if}
     </div>
 
@@ -841,6 +946,21 @@
       {/if}
     </div>
 
+    <!-- One click between two readings of size: the kind of thing it is, or
+         how connected it is. The icon is the change it makes, circles growing. -->
+    <div class="sizebox">
+      <button class="iconbtn" class:active={sizeByDegree} onclick={toggleSizes}
+              aria-pressed={sizeByDegree}
+              title={sizeByDegree ? 'Back to one size per kind of thing'
+                                  : 'Size nodes by their number of connections'}>
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+          <circle cx="4" cy="14" r="2" fill="currentColor" />
+          <circle cx="9.5" cy="12.5" r="3.3" fill="currentColor" />
+          <circle cx="15.5" cy="10" r="4.4" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+
     <!-- How to drive the thing, folded away. Open once, learn the four
          gestures, close it and get the whole canvas back. -->
     <div class="helpbox" class:open={helpOpen}>
@@ -853,28 +973,26 @@
         <div class="helppanel" id="graph-help">
           <p class="hh">Moving around</p>
           <dl>
-            {#if flat}
-              <dt>Drag</dt><dd>move the picture</dd>
-              <dt>Drag a node</dt><dd>put it where you want it</dd>
-            {:else}
-              <dt>Left-drag</dt><dd>turn the graph</dd>
-              <dt>Right-drag</dt><dd>move the picture</dd>
-            {/if}
+            <dt>Left-drag</dt><dd>turn the graph</dd>
+            <dt>Right-drag</dt><dd>move the picture</dd>
             <dt>Scroll / pinch</dt><dd>zoom towards the pointer</dd>
             {#if layout === 'shell'}
               <dt>Rings</dt><dd>each is a pipeline stage, with how many are on it</dd>
             {/if}
-            {#if !flat}
-              <dt>⌖</dt><dd>bring it all back to the middle</dd>
-            {/if}
+            <dt>⌖</dt><dd>bring it all back to the middle</dd>
           </dl>
           <p class="hh">Reading a node</p>
           <dl>
             <dt>Hover</dt><dd>what it is</dd>
             <dt>Click</dt><dd>select it — the spin waits while you read</dd>
             <dt>Double-click</dt><dd>light up its family</dd>
-            <dt>Right-click</dt><dd>the full menu — trace a path, hide a type</dd>
+            <dt>Right-click</dt><dd>highlight the whole path</dd>
             <dt>Shift-click</dt><dd>pick it out by hand</dd>
+            <dt>Circles button</dt><dd>size every node by how many connections it has</dd>
+          </dl>
+          <p class="hh">Reading a relation</p>
+          <dl>
+            <dt>Click a line</dt><dd>what the relation means, and the two things it joins</dd>
           </dl>
         </div>
       {/if}
@@ -887,24 +1005,31 @@
       </div>
     {/if}
 
-    <button class="spinsw" class:off={!rotation.spinning} disabled={flat}
+    <button class="spinsw" class:off={!rotation.spinning}
             onclick={toggleSpin}
-            title={flat ? 'Rotation only applies to the force layout — this view is flat'
-                        : selected ? 'Paused while a node is selected — press to spin anyway'
-                        : ''}
-            style={flat ? 'opacity:.35;cursor:not-allowed' : ''}>
+            title={selected ? 'Paused while a node is selected — press to spin anyway'
+                   : selectedEdge ? 'Paused while a relation is selected — press to spin anyway'
+                   : ''}>
       {rotation.spinning ? '⏸ Rotation' : '▶ Rotation'}
       {#if selected && !rotation.spinning}<span class="why">· node selected</span>{/if}
+      {#if selectedEdge && !rotation.spinning}<span class="why">· relation selected</span>{/if}
     </button>
 
-    {#if anyHighlight || selected}
-      <!-- Only here while there is something to clear. A control that is always
-           present but usually does nothing teaches you to ignore it. -->
-      <button class="clearsel" onclick={clearSelection}>
-        ✕ Clear selection
-        <span class="n">{brightCount || (selected ? 1 : 0)}</span>
-      </button>
-    {/if}
+    <div class="topleft">
+      {#if anyHighlight || selected || selectedEdge}
+        <!-- Only here while there is something to clear. A control that is always
+             present but usually does nothing teaches you to ignore it. -->
+        <button class="clearsel" onclick={clearSelection}>
+          ✕ Clear selection
+          <span class="n">{brightCount || (selected || selectedEdge ? 1 : 0)}</span>
+        </button>
+      {/if}
+      {#if pathOf}
+        <!-- the timeline covers the graph, so it opens only when asked for -->
+        <button class="historybtn" onclick={() => (pathWindow = pathOf)}>
+          Display full history</button>
+      {/if}
+    </div>
 
     <!-- A graph you can move is a graph you can push off the edge of the
          screen, so the way back has to be one click, not a hunt. -->
@@ -920,23 +1045,15 @@
               title="One ball per outcome — turn it to see inside">Clustered · outcome</button>
       <button class:on={layout === 'grouped'} onclick={() => relayout('grouped')}
               title="One ball per kind of thing — turn it to see inside">Grouped · by type</button>
-      <button class:on={layout === 'layered'} onclick={() => relayout('layered')}>Layered · pipeline</button>
     </div>
 
     {#if menu}
       {@const item = menu}
       <div class="ctx" style="left:{item.x + 6}px; top:{item.y + 6}px" role="menu">
         <div class="ctxhead">{item.node.label}</div>
-        <button onclick={() => tracePath(item.node, 'both')}>Trace the whole path</button>
-        <button onclick={() => tracePath(item.node, 'up')}>Where did this come from</button>
-        <button onclick={() => tracePath(item.node, 'down')}>What became of it</button>
-        <div class="ctxsep"></div>
-        <button onclick={() => { highlightNeighbourhood(item.node); menu = null; }}>
-          Highlight its family</button>
-        <div class="ctxsep"></div>
-        <button onclick={() => { facets.ntype[item.node.type] = false; menu = null; }}>
-          Hide every {TYPE_LABEL[item.node.type].toLowerCase()}</button>
+        <button onclick={() => tracePath(item.node)}>Highlight path</button>
         {#if anyHighlight}
+          <div class="ctxsep"></div>
           <button onclick={() => { clearHighlight(); menu = null; }}>Clear the highlight</button>
         {/if}
       </div>
@@ -952,7 +1069,9 @@
   </div>
 
   <aside class="right">
-    <Inspector node={selected} family={familyNodes} {model} steps={pathSteps} />
+    <Inspector node={selected} family={familyNodes} {model} steps={pathSteps}
+               edge={selectedEdge} onPick={(node) => selectNode(node)}
+               {connectionsOf} {visibility} />
   </aside>
 
   <PathWindow node={pathWindow} {model} onClose={() => (pathWindow = null)} />
@@ -1020,13 +1139,19 @@
   .spinsw .why { color: #7f8ea6; font-weight: 500; }
 
   /* top left, the one corner of the canvas nothing else uses */
-  .clearsel { position: absolute; top: 12px; left: 14px; z-index: 6;
-              display: flex; align-items: center; gap: 7px;
+  .topleft { position: absolute; top: 12px; left: 14px; z-index: 6;
+             display: flex; gap: 8px; }
+  .clearsel { display: flex; align-items: center; gap: 7px;
               background: var(--accent); border: 1px solid var(--accent);
               border-radius: 9px; padding: 6px 12px; color: #fff; font: inherit;
               font-size: 12px; font-weight: 700; cursor: pointer;
               box-shadow: 0 4px 14px rgba(8, 13, 22, .35); }
   .clearsel:hover { filter: brightness(1.08); }
+  .historybtn { background: rgba(12, 19, 32, .82); border: 1px solid #2a3b57;
+                border-radius: 9px; padding: 6px 12px; color: #d6e2f2; font: inherit;
+                font-size: 12px; font-weight: 700; cursor: pointer;
+                box-shadow: 0 4px 14px rgba(8, 13, 22, .35); }
+  .historybtn:hover { border-color: var(--accent); color: #fff; }
   .clearsel .n { background: rgba(255, 255, 255, .22); border-radius: 6px;
                  padding: 0 6px; font-weight: 700; }
 
@@ -1054,6 +1179,12 @@
   .helpbtn:hover, .iconbtn:hover { color: #fff; border-color: #3d5480; }
   .helpbox.open .helpbtn { color: #fff; }
   .iconbtn:disabled { cursor: progress; color: #8ea0ba; }
+
+  /* under the export button, sharing the same right edge */
+  /* one below the menus, so an open export menu covers it rather than the reverse */
+  .sizebox { position: absolute; top: 84px; right: 12px; z-index: 5; }
+  .sizebox .iconbtn { display: grid; place-items: center; padding: 0; }
+  .iconbtn.active { color: #fff; background: #2a9d8f; border-color: #2a9d8f; }
 
   /* directly under the help button, sharing its right edge */
   .exportbox { position: absolute; top: 48px; right: 12px; z-index: 6;

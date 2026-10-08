@@ -122,7 +122,9 @@ await page.evaluate(() => {
 });
 await settle(400);
 await page.evaluate(() => [...document.querySelectorAll('.ctx button')]
-  .find((b) => b.textContent.includes('Trace the whole path')).click());
+  .find((b) => b.textContent.includes('Highlight path')).click());
+await settle(400);
+await page.click('.historybtn');
 await settle(1000);
 
 /* What the picture must contain: the dialog is a fixed-size window onto content

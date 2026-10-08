@@ -111,6 +111,9 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
             age=round(row.age or 0), consent=bool(row.consent), patient_id=row.id)
         patient_index[row.id] = index
         attach_identifiers("patient", row.id, index)
+        # the enrolling oncologist; without this link they reach the graph unattached
+        if row.enrolled_by_id in operators:
+            g.link(operators[row.enrolled_by_id], index, "enrolled")
 
     specimens = session.scalars(
         select(Specimen).where(Specimen.patient_id.in_(patient_index))

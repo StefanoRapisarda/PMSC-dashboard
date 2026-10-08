@@ -84,7 +84,8 @@ export class Rotator {
   /** Settle the given nodes in three dimensions and start projecting. */
   start(nodeIds: number[], edges: Edge3[], frame = true) {
     this.begin(nodeIds, 1.6, frame);
-    this.sim.reset(nodeIds, edges);
+    /* a re-settle that keeps the frame is a type toggle: keep what is placed */
+    this.sim.reset(nodeIds, edges, !frame);
     this.ready();
   }
 

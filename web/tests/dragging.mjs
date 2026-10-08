@@ -61,22 +61,6 @@ check('drag does NOT pan the viewport', before.pan === after.pan,
 check('drag does NOT change zoom', before.zoom === after.zoom,
       `${before.zoom} → ${after.zoom}`);
 
-/* the flat views are the opposite: nothing animates, so pan and grab are back */
-await layoutBtn('Layered');
-await new Promise(r => setTimeout(r, 1200));
-const flat = await state();
-check('panning returns in the layered view', flat.panning === true);
-check('nodes are grabbable in the layered view', flat.grabbable === true);
-
-await page.mouse.move(box.x + box.w * 0.6, box.y + box.h * 0.5);
-await page.mouse.down();
-await page.mouse.move(box.x + box.w * 0.4, box.y + box.h * 0.5, { steps: 10 });
-await page.mouse.up();
-await new Promise(r => setTimeout(r, 300));
-const flatAfter = await state();
-check('drag pans in the layered view', flat.pan !== flatAfter.pan,
-      `${flat.pan} → ${flatAfter.pan}`);
-
 /* back to the force view, where turning is the point */
 await layoutBtn('Force');
 await page.waitForFunction(
