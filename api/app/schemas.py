@@ -24,6 +24,7 @@ class Overview(BaseModel):
     turnaround: dict[str, Any]
     stage_distribution: list[dict[str, Any]]
     attention: list[dict[str, Any]]
+    progress: dict[str, Any]
 
 
 class GraphPayload(BaseModel):

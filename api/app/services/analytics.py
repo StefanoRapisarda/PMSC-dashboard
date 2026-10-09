@@ -5,7 +5,7 @@ the app is that the numbers are derived, so they stay right when the data moves.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -413,3 +413,128 @@ def attention(session: Session, limit: int = 40) -> list[dict]:
             "failed": failed,
         })
     return out
+
+
+def _status(ratio: float | None) -> str | None:
+    """Green, amber or red for a ratio of actual to expected, or None without one."""
+    if ratio is None:
+        return None
+    if ratio >= config.PACE_GREEN:
+        return "green"
+    return "amber" if ratio >= config.PACE_AMBER else "red"
+
+
+def progress(session: Session) -> dict:
+    """How the study is moving over time, and how it stands against its targets.
+
+    Three answers for the three cards at the foot of the dashboard. The weekly
+    series count how many patients and samples have reached each milestone by
+    the end of each week. Recruitment and the feasibility endpoints are set
+    against the targets in config, and every target is reported as unset (None)
+    until the study team fills it in, rather than being guessed here.
+    """
+    row = session.scalars(select(Study)).first()
+    as_of = row.as_of if row and row.as_of else date.today()
+
+    enrolled = sorted(d for (d,) in session.execute(select(Patient.enrolled_on)) if d)
+    collected = sorted(d for (d,) in session.execute(select(Specimen.collected_on)) if d)
+    # a sample's results are back from the day its first fraction came back
+    back_by_specimen = dict(session.execute(
+        select(Aliquot.specimen_id, func.min(PlatformRun.returned_on))
+        .join(PlatformRun, PlatformRun.aliquot_id == Aliquot.id)
+        .where(PlatformRun.returned_on.is_not(None))
+        .group_by(Aliquot.specimen_id)).all())
+    ordered_by_specimen = dict(session.execute(
+        select(Activity.specimen_id, func.min(Activity.performed_on))
+        .where(Activity.kind == "mtb", Activity.performed_on.is_not(None))
+        .group_by(Activity.specimen_id)).all())
+
+    # ---------------------------------------------------------------- weekly
+    start = (enrolled[0] if enrolled else as_of)
+    start -= timedelta(days=start.weekday())          # the Monday of that week
+    weeks: list[date] = []
+    week = start
+    while week <= as_of:
+        weeks.append(week)
+        week += timedelta(days=7)
+
+    def cumulative(dates: list[date]) -> list[int]:
+        """How many of these dates fall on or before the end of each week."""
+        ordered, out, i = sorted(dates), [], 0
+        for w in weeks:
+            end = w + timedelta(days=6)
+            while i < len(ordered) and ordered[i] <= end:
+                i += 1
+            out.append(i)
+        return out
+
+    series = {
+        "enrolled": cumulative(enrolled),
+        "collected": cumulative(collected),
+        "data_back": cumulative(list(back_by_specimen.values())),
+        "portal": cumulative(list(ordered_by_specimen.values())),
+    }
+
+    # ----------------------------------------------------------- recruitment
+    target = config.TARGET_ENROLMENT
+    end = config.RECRUITMENT_END
+    window_start = as_of - timedelta(weeks=config.PACE_WINDOW_WEEKS)
+    recent = sum(1 for d in enrolled if window_start < d <= as_of)
+    per_week = recent / config.PACE_WINDOW_WEEKS
+    projected = None
+    if target and len(enrolled) < target and per_week > 0:
+        projected = (as_of + timedelta(weeks=(target - len(enrolled)) / per_week)).isoformat()
+    on_pace = None
+    if target and end and enrolled and end > enrolled[0]:
+        elapsed = (min(as_of, end) - enrolled[0]).days
+        expected = target * elapsed / (end - enrolled[0]).days
+        on_pace = round(len(enrolled) / expected, 3) if expected > 0 else None
+    recruitment = {
+        "enrolled": len(enrolled), "target": target,
+        "first_enrolled": enrolled[0].isoformat() if enrolled else None,
+        "recruitment_end": end.isoformat() if end else None,
+        "per_week": round(per_week, 2), "pace_window_weeks": config.PACE_WINDOW_WEEKS,
+        "projected_completion": projected,
+        "on_pace": on_pace,
+        "status": "complete" if target and len(enrolled) >= target else _status(on_pace),
+    }
+
+    # ------------------------------------------------- feasibility endpoints
+    patients_total = len(enrolled)
+    specimens_total = len(collected)
+    patients_in_portal = session.scalar(
+        select(func.count(func.distinct(Specimen.patient_id)))
+        .where(Specimen.id.in_(list(ordered_by_specimen)))) or 0
+    collected_on = dict(session.execute(select(Specimen.id, Specimen.collected_on)).all())
+
+    def endpoint(key, label, numerator, denominator, target_pct, unit, note=None):
+        pct = round(numerator / denominator * 100, 1) if denominator else None
+        ratio = pct / target_pct if pct is not None and target_pct else None
+        return {"key": key, "label": label, "numerator": numerator,
+                "denominator": denominator, "unit": unit, "pct": pct,
+                "target_pct": target_pct, "status": _status(ratio), "note": note}
+
+    window = config.TURNAROUND_WINDOW_DAYS
+    if window is None:
+        within = endpoint("within_window", "Ordered in the portal within the turnaround window",
+                          0, 0, config.TARGET_WITHIN_WINDOW_PCT, "samples",
+                          note="The turnaround window is not set.")
+    else:
+        ordered = [(collected_on.get(s), d) for s, d in ordered_by_specimen.items()]
+        met = sum(1 for c, d in ordered if c and (d - c).days <= window)
+        within = endpoint("within_window",
+                          f"Ordered in the portal within {window} days of collection",
+                          met, len(ordered), config.TARGET_WITHIN_WINDOW_PCT, "samples")
+
+    endpoints = [
+        endpoint("results", "Samples with results back", len(back_by_specimen),
+                 specimens_total, config.TARGET_RESULTS_PCT, "samples"),
+        endpoint("portal", "Patients with a case in the MTB Portal", patients_in_portal,
+                 patients_total, config.TARGET_PORTAL_PCT, "patients"),
+        within,
+    ]
+
+    return {"as_of": as_of.isoformat(), "weeks": [w.isoformat() for w in weeks],
+            "series": series, "recruitment": recruitment, "endpoints": endpoints,
+            # the targets are placeholders, so the page stamps what comes from them
+            "targets_illustrative": config.TARGETS_ARE_ILLUSTRATIVE}

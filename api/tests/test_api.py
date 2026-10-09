@@ -202,3 +202,48 @@ def test_search_finds_a_specimen_by_any_captured_id():
     value = client.get("/api/specimens/1").json()["id_chain"][1]["value"]
     hits = client.get(f"/api/search?q={value}").json()["hits"]
     assert hits and hits[0]["specimen_id"] == 1
+
+
+def test_progress_series_only_ever_grow():
+    """Each series counts what has reached a milestone by the end of a week, so
+    it can never go down, and its last value is the total in the store."""
+    progress = client.get("/api/overview").json()["progress"]
+    for name, values in progress["series"].items():
+        assert len(values) == len(progress["weeks"])
+        assert all(a <= b for a, b in zip(values, values[1:])), name
+    assert progress["series"]["enrolled"][-1] == 100
+    assert progress["series"]["collected"][-1] == 176
+
+
+def test_targets_left_unset_are_reported_as_unset(monkeypatch):
+    """A target set to None must not be judged against: a status without a
+    target would be an invented verdict."""
+    from app import config
+    for name in ("TARGET_ENROLMENT", "RECRUITMENT_END", "TARGET_RESULTS_PCT",
+                 "TARGET_PORTAL_PCT", "TURNAROUND_WINDOW_DAYS", "TARGET_WITHIN_WINDOW_PCT"):
+        monkeypatch.setattr(config, name, None)
+    progress = client.get("/api/overview").json()["progress"]
+    recruitment = progress["recruitment"]
+    assert recruitment["target"] is None and recruitment["status"] is None
+    assert recruitment["projected_completion"] is None
+    assert all(e["status"] is None for e in progress["endpoints"])
+
+
+def test_the_placeholder_targets_are_flagged_as_illustrative():
+    """No document states PreDDLung's targets, so the ones in config are made up
+    and the API must say so, for the page to stamp them."""
+    progress = client.get("/api/overview").json()["progress"]
+    assert progress["targets_illustrative"] is True
+    assert progress["recruitment"]["target"] == 150
+
+
+def test_a_target_turns_on_pace_and_projection(monkeypatch):
+    """Once the team sets a target and an end date, recruitment is judged."""
+    from datetime import date
+    from app import config
+    monkeypatch.setattr(config, "TARGET_ENROLMENT", 150)
+    monkeypatch.setattr(config, "RECRUITMENT_END", date(2026, 12, 31))
+    recruitment = client.get("/api/overview").json()["progress"]["recruitment"]
+    assert recruitment["status"] in {"green", "amber", "red"}
+    assert recruitment["on_pace"] is not None
+    assert recruitment["projected_completion"] > "2026-08-19"

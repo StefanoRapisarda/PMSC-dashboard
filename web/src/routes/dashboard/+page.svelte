@@ -5,27 +5,13 @@
   import Sankey from '$lib/components/Sankey.svelte';
   import SampleTypes from '$lib/components/SampleTypes.svelte';
   import Turnaround from '$lib/components/Turnaround.svelte';
+  import ProgressChart from '$lib/components/ProgressChart.svelte';
+  import Recruitment from '$lib/components/Recruitment.svelte';
+  import Endpoints from '$lib/components/Endpoints.svelte';
   import type { Overview } from '$lib/types';
 
   let data = $state<Overview | null>(null);
   let error = $state<string | null>(null);
-
-  /**
-   * The panels at the foot of the dashboard, held open rather than filled in.
-   *
-   * Each carries a name and one line saying what it is for. That is enough for a
-   * colleague to say "yes, that one, and it should show X" — which is the point
-   * of showing the space at all. What actually goes in them is the study team's
-   * decision, so nothing here guesses at it.
-   */
-  const RESERVED = [
-    { title: 'Needs attention',
-      what: 'Samples that have stopped moving, and what each of them is waiting on.' },
-    { title: 'Cohort recruitment',
-      what: 'How enrolment is tracking against the target, over time and by site.' },
-    { title: 'Turnaround by site',
-      what: 'How long each contributing site takes, compared with the others.' },
-  ];
 
   $effect(() => {
     api.overview().then((d) => (data = d)).catch((e) => (error = String(e)));
@@ -120,27 +106,27 @@
         <Sankey flow={data.flow} />
       </div>
 
-      <!--
-        Space held open, not filled in.
-
-        This row used to be a single list of samples with no next step. It is now
-        three empty panels, because what belongs in this part of the dashboard is
-        a decision for the study team rather than a guess by whoever built it. An
-        empty panel with a name on it asks that question of a reader far more
-        directly than a filled one does, and it shows how much room there is to
-        answer it in.
-      -->
-      <div class="reserved">
-        {#each RESERVED as panel}
-          <div class="card slot">
-            <h3>{panel.title}</h3>
-            <p class="what">{panel.what}</p>
-            <div class="placeholder">
-              <span class="mark" aria-hidden="true"></span>
-              <span>Reserved for your choice of content</span>
-            </div>
-          </div>
-        {/each}
+      <!-- How the study is moving, and how it stands against its targets. The
+           targets live in api/app/config.py and are unset until the study team
+           fills them in, so the cards say "not set" rather than guess. -->
+      <div class="progressrow">
+        <div class="card">
+          <h3>Study progress
+            <span class="sub">· cumulative, by week</span></h3>
+          <ProgressChart progress={data.progress} />
+        </div>
+        <div class="card">
+          <h3>Recruitment
+            <span class="sub">· patients enrolled against the target</span></h3>
+          <Recruitment recruitment={data.progress.recruitment}
+                       illustrative={data.progress.targets_illustrative} />
+        </div>
+        <div class="card">
+          <h3>Feasibility endpoints
+            <span class="sub">· against the study's targets</span></h3>
+          <Endpoints endpoints={data.progress.endpoints}
+                     illustrative={data.progress.targets_illustrative} />
+        </div>
       </div>
     {/if}
   </div>
@@ -148,23 +134,10 @@
 
 <style>
   /* three across on a wide screen, stacking as it narrows */
-  .reserved { display: grid; gap: 14px; margin-top: 14px;
-              grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  @media (max-width: 1150px) { .reserved { grid-template-columns: 1fr; } }
-  .slot { display: flex; flex-direction: column; }
-  .slot .what { margin: 4px 0 0; font-size: 12.5px; color: var(--muted);
-                line-height: 1.45; }
-  /* A dashed outline reads as "nothing is missing here, this is deliberate",
-     where a blank area reads as a page that failed to load. */
-  .placeholder { margin-top: 12px; flex: 1 1 auto; min-height: 116px;
-                 display: flex; flex-direction: column; align-items: center;
-                 justify-content: center; gap: 9px; text-align: center;
-                 border: 1px dashed var(--border); border-radius: 10px;
-                 background: repeating-linear-gradient(45deg,
-                   #fbfcfd 0 9px, #f5f7f9 9px 18px);
-                 color: var(--muted); font-size: 12px; font-weight: 600; }
-  .placeholder .mark { width: 22px; height: 22px; border-radius: 6px;
-                       border: 1px dashed var(--border); background: #fff; }
+  .progressrow { display: grid; gap: 14px; margin-top: 14px;
+                 grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 1150px) { .progressrow { grid-template-columns: 1fr; } }
+  .progressrow h3 .sub { font-weight: 400; color: var(--muted); font-size: 12px; }
 
   .typesplit { display: flex; gap: 22px; align-items: flex-start; }
   .typesplit :global(.qcchart) { flex: 1 1 auto; min-width: 0; }

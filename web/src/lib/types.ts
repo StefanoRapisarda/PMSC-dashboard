@@ -124,6 +124,28 @@ export interface Turnaround {
   note: string;
 }
 
+export type Status = 'green' | 'amber' | 'red' | 'complete' | null;
+
+/** How the study moves over time, and how it stands against its targets. */
+export interface Progress {
+  as_of: string;
+  /** the Monday of each week, from the first enrolment to the snapshot */
+  weeks: string[];
+  /** cumulative counts at the end of each week */
+  series: { enrolled: number[]; collected: number[]; data_back: number[]; portal: number[] };
+  recruitment: {
+    enrolled: number; target: number | null; first_enrolled: string | null;
+    recruitment_end: string | null; per_week: number; pace_window_weeks: number;
+    projected_completion: string | null; on_pace: number | null; status: Status;
+  };
+  endpoints: {
+    key: string; label: string; numerator: number; denominator: number; unit: string;
+    pct: number | null; target_pct: number | null; status: Status; note: string | null;
+  }[];
+  /** the targets are placeholders, so whatever comes from them is stamped */
+  targets_illustrative: boolean;
+}
+
 export interface Overview {
   kpis: {
     patients_enrolled: number; specimens_collected: number; aliquots: number;
@@ -158,6 +180,7 @@ export interface Overview {
     sample_type: string | null; stage_reached: string;
     days_since_last_step: number; waiting_on: string[]; failed: string[];
   }[];
+  progress: Progress;
 }
 
 export interface SpecimenDetail {

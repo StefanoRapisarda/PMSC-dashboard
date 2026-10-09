@@ -210,25 +210,38 @@ for (let i = 0; i < boxes.length; i++)
     if (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y)
       collisions.push(`"${a.t}"/"${b.t}"`);
   }
-/* The foot of the dashboard is space held open rather than filled in. An empty
-   panel with a name on it asks the study team what belongs there far more
-   directly than a filled one does. */
-const reserved = await page.evaluate(() => ({
-  panels: [...document.querySelectorAll('.reserved .slot')].map((s) => ({
-    title: s.querySelector('h3')?.textContent.trim(),
-    what: (s.querySelector('.what')?.textContent ?? '').trim().length,
-    holder: !!s.querySelector('.placeholder'),
-  })),
-  oldList: document.querySelectorAll('.stuck').length,
-}));
-check('the dashboard reserves three named panels', reserved.panels.length === 3,
-      reserved.panels.map((p) => p.title).join(' | '));
-check('each one is named and says what it is for',
-      reserved.panels.every((p) => p.title && p.what > 20),
-      reserved.panels.map((p) => `${p.title}:${p.what}`).join(' | '));
-check('and each shows it is deliberately empty rather than broken',
-      reserved.panels.every((p) => p.holder));
-check('the old attention list is gone', reserved.oldList === 0);
+/* The foot of the dashboard shows how the study moves and how it stands against
+   its targets. The targets in this repository are placeholders, so every figure
+   judged against one has to carry the "fac simile" stamp. */
+const foot = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.progressrow .card')];
+  return {
+    titles: cards.map((c) => c.querySelector('h3')?.firstChild?.textContent.trim()),
+    lines: document.querySelectorAll('.progressrow svg path').length,
+    ends: [...document.querySelectorAll('.progressrow .end')].map((e) => Number(e.textContent)),
+    unset: document.querySelectorAll('.progressrow .chip.unset').length,
+    judged: document.querySelectorAll('.progressrow .chip:not(.unset)').length,
+    stamps: document.querySelectorAll('.progressrow .stamp').length,
+    oldList: document.querySelectorAll('.stuck').length,
+    placeholders: document.querySelectorAll('.placeholder').length,
+  };
+});
+check('the foot shows progress, recruitment and the feasibility endpoints',
+      foot.titles.join('|') === 'Study progress|Recruitment|Feasibility endpoints',
+      foot.titles.join(' | '));
+check('the progress chart draws one line per milestone', foot.lines === 4, String(foot.lines));
+check('each line ends at the totals the API reports',
+      [...foot.ends].sort((a, b) => a - b).join(',') === [
+        api.progress.series.enrolled, api.progress.series.collected,
+        api.progress.series.data_back, api.progress.series.portal,
+      ].map((s) => s[s.length - 1]).sort((a, b) => a - b).join(','), foot.ends.join(','));
+const illustrative = api.progress.targets_illustrative;
+check('placeholder targets are stamped wherever they are used',
+      !illustrative || (foot.judged === 4 && foot.stamps >= 4),
+      `${foot.judged} judged, ${foot.stamps} stamps, illustrative: ${illustrative}`);
+check('and real ones are not', illustrative || foot.stamps === 0, `${foot.stamps} stamps`);
+check('the placeholders are gone', foot.placeholders === 0);
+check('the old attention list is gone', foot.oldList === 0);
 
 check('no overlapping labels', collisions.length === 0, collisions.slice(0, 3).join(', '));
 

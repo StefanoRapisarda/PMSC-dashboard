@@ -19,6 +19,7 @@ def overview(session: Session = Depends(get_session)) -> Overview:
         turnaround=analytics.turnaround(session),
         stage_distribution=analytics.stage_distribution(session),
         attention=analytics.attention(session),
+        progress=analytics.progress(session),
     )
 
 
