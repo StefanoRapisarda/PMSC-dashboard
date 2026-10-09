@@ -382,7 +382,10 @@
            dot would silently swap the panel for something nobody can find on the
            canvas. Picking by hand is the exception, because there the rest stays
            visible precisely so the next node can be clicked. */
-        element.toggleClass('inert', inView && anyHighlight && !bright && !picking);
+        /* a lit type with nothing else highlighted keeps the rest as a faint,
+           still clickable background: see litback in cy.ts */
+        element.toggleClass('litback', inView && litOnly && !bright);
+        element.toggleClass('inert', inView && anyHighlight && !bright && !picking && !litOnly);
         element.toggleClass('bright', inView && anyHighlight && bright);
       });
       cy!.edges().forEach((edge) => {
@@ -397,7 +400,8 @@
           || (!!expanded && !(expanded.has(a) && expanded.has(b)))));
         edge.toggleClass('faded', shown && anyHighlight && !bothPicked);
         edge.toggleClass('bright', shown && anyHighlight && bothPicked);
-        edge.toggleClass('inert', shown && anyHighlight && !bothPicked && !picking);
+        edge.toggleClass('litback', shown && litOnly && !bothPicked);
+        edge.toggleClass('inert', shown && anyHighlight && !bothPicked && !picking && !litOnly);
       });
     });
 
@@ -707,6 +711,8 @@
   const anyHighlight = $derived(highlighted.size > 0 || lit.size > 0);
   /* a set picked by hand, as opposed to a traced path, a family or a lit type */
   const picking = $derived(highlighted.size > 0 && !pathOf && !familyOf && lit.size === 0);
+  /* only whole types are lit: no path, family or hand-picked set narrows them */
+  const litOnly = $derived(lit.size > 0 && highlighted.size === 0);
   /* The lit family, as nodes, for the panel. Only what is actually on screen:
      the family reaches through layers that may be switched off, and describing
      something the reader cannot see is how the panel got confusing in the first

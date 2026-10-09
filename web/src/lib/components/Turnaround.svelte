@@ -83,7 +83,7 @@ The median says what is typical; this says how bad the slow tail gets.">9 in 10 
     {#if share > 0}
       <span class="seg" class:parallel={segment.parallel}
             style="width:{share}%; background:{PHASE[segment.phase]}"
-            title="{segment.label} · median {segment.median_days} d · p90 {segment.p90_days} · n={segment.n}">
+            title="{segment.label}. Half of the samples took {days(segment.median_days)} or less, and 90% did not exceed {days(segment.p90_days)}. Measured on {segment.n} samples.">
         {#if share > 11}<b>{days(segment.median_days)}</b>{/if}
       </span>
     {/if}
@@ -106,10 +106,11 @@ The median says what is typical; this says how bad the slow tail gets.">9 in 10 
           <span class="sameday">same day</span>
         {/if}
       </span>
-      <span class="days">{segment.median_days}<span class="unit">&nbsp;{
+      <span class="days"
+            title="Median: half of the samples took {days(segment.median_days)} or less, and half took longer. Measured on {segment.n} samples.">{segment.median_days}<span class="unit">&nbsp;{
         segment.median_days === 1 ? 'day' : 'days'}</span></span>
       <span class="meta"
-            title="90th percentile: nine in ten took {segment.p90_days} days or less. Measured on {segment.n} samples.">
+            title="90th percentile: 90% of the samples did not exceed {days(segment.p90_days)}. Measured on {segment.n} samples.">
         p90 {segment.p90_days} · n={segment.n}</span>
     </div>
 

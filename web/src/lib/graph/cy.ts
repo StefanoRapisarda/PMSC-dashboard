@@ -149,6 +149,11 @@ export function style(): cytoscape.StylesheetStyle[] {
     /* Picking by hand fades the rest far less, because the nodes still to be
        picked have to stay visible enough to click. Labels stay off. */
     { selector: 'node.receded', style: { opacity: 0.3 } },
+    /* A lit type is asked about against the rest of the graph, so the rest stays
+       as a faint background instead of vanishing. Without it the sun looked the
+       same as switching every other type off with its eye. */
+    { selector: 'node.litback', style: { opacity: 0.25 } },
+    { selector: 'edge.litback', style: { opacity: 0.1 } },
     /* faded out by a path, a family or a lit type: not there to be clicked */
     { selector: '.inert', style: { events: 'no' } },
     /* and what IS highlighted comes fully forward: the depth shading otherwise
