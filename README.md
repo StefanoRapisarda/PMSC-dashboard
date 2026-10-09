@@ -1,186 +1,194 @@
 # PM-SC dashboard
 
-Sample provenance for **Precision Medicine Sample Central** (WP2). Three tiers:
-a database, an API over it, and a SvelteKit frontend that talks to the API over
-HTTP. The cohort is synthetic, generated from the REDCap data dictionary.
+This repository holds the sample-provenance showcase for Precision Medicine Sample Central (PM-SC), a work package 2 (WP2) deliverable at Karolinska. It follows samples from the PreDDLung lung-cancer pilot through collection, pathology, preparation, extraction, quality control, analysis and the Molecular Tumor Board Portal. It shows where each sample is, what has stalled, whether material passed QC, and how a sample is renamed by every system it passes through.
 
-```
-data/          the synthetic export (generator + builder)  — the mock "source system"
-api/           FastAPI + SQLAlchemy over SQLite            — the application store & service
-web/           SvelteKit + TypeScript + Cytoscape.js       — the frontend
-mockups/       index-v3.html                               — the design base, unchanged
-```
+Every patient, sample and date in it is synthetic. The data is generated from the project's REDCap data dictionary, so the showcase exercises the same format a live export will have. Moving to real data is meant to be a change of input, not a redesign.
+
+## What is in the repository
+
+| Directory | What it holds |
+|---|---|
+| `data/` | This is the mock source system. A standard-library Python generator simulates the cohort and writes a REDCap export, and a builder turns that export into normalized tables and a provenance graph. |
+| `api/` | This is the application store and service. FastAPI and SQLAlchemy load the graph into a SQLite database and answer every question the front end asks. |
+| `web/` | This is the front end. SvelteKit with Svelte 5 and TypeScript draws three views, and Cytoscape.js renders the knowledge graph. |
+| `docs/` | These are the design documents, the domain brief, the lab concepts, the open questions, and the code documentation in `docs/codebase/`. |
+| `mockups/` | These are the HTML mockups. `index-v3.html` was shaped by team feedback and is the design base, and it is left unchanged. |
 
 ## Running it
 
-Two processes. First the API:
+You need Python 3.12 or newer and Node 22. The generated data and the database are not in git, so a fresh clone has to build them once before anything starts.
 
 ```bash
-cd api
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m app.seed --force      # load the export into pmsc.db
-./run.sh                                  # http://localhost:8000  (/docs for the API)
+# build the synthetic cohort and the database (once, and after any change to data/)
+python3 data/generator/generate.py
+python3 data/builder/build.py --web /tmp/discard
+cd api && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m app.seed --force
+cd ..
+
+# start the API and the front end together; Ctrl-C stops both
+./start.sh
 ```
 
-Then the frontend:
+The API runs at http://localhost:8000, with its interactive documentation at `/docs`, and the dashboard runs at http://localhost:5173. To run them separately, use `api/run.sh` and `npm run dev` in `web/`.
 
-```bash
-cd web
-npm install
-npm run dev                               # http://localhost:5173
-```
+Always pass `--web` to the builder. By default it writes its own `graph.json` into `web/static/data/`, where the static build expects a file of a different shape, and the next static build would then fail.
 
-`npm run check` type-checks the frontend and `npm run test:e2e` drives a real
-Chrome against it (it asserts that the layout settles, that rotation moves the
-projection, that pausing holds it still, and that it is disabled in the flat
-views). `.venv/bin/python -m pytest` runs the API tests.
+## How it works
 
-## The three tiers
+The application is a pipeline of four stages, and each stage reads only what the stage before it wrote.
 
-**Database (`api/pmsc.db`).** Thirteen tables — study, patient, specimen, aliquot,
-qc_result, deviation, activity, staff, facility, platform_run, storage_location,
-identifier, and an `edges` table. Two shapes on purpose: counting questions
-("how many specimens cleared QC") are a GROUP BY over the entity tables, while
-traversal questions ("what else is in this freezer box") walk edges. In
-production those would be two stores; here one file serves both and the API
-keeps the split visible so that swap stays cheap.
+| Stage | Where it lives | What it reads | What it writes |
+|---|---|---|---|
+| Generate | `data/generator/` | `config.py` and the REDCap dictionary | `data/out/redcap_export.csv`, with 181 records and 141 columns, and `manifest.json` |
+| Build | `data/builder/` | The export | `patients.csv`, `samples.csv` and `graph.json`, which has 13 node types and 18 edge types |
+| Seed and serve | `api/` | The graph and the export | `api/pmsc.db` with 14 tables, then JSON over HTTP |
+| Render | `web/` | JSON from the API or from static files | The workflow, the study dashboard and the knowledge graph |
 
-`app/seed.py` is the mock of the production ingest. In the real system a weekly
-pipeline reads REDCap and writes these same tables. Nothing above that line
-changes when it does — which is the point of putting a database under the app
-rather than serving JSON files.
+The cohort has 100 patients, 176 specimens and 419 aliquots. A fixed snapshot date, `AS_OF = 2026-08-19`, is stamped into the data, and no part of the system reads the clock. That keeps every number identical from one build to the next, so a rehearsed demonstration shows the same figures months later. The generator is seeded for the same reason, and the same commit always produces byte-identical output.
 
-**API (`api/app`).** FastAPI. `services/analytics.py` answers the counting
-questions in SQL; `services/graph.py` answers the traversal ones and returns the
-node/edge vocabulary the frontend's graph already speaks. Routers are thin.
-Nothing reads a precomputed aggregate file — every number on the dashboard is
-derived, so it stays right when the data moves.
+### The API
 
-**Frontend (`web/src`).** SvelteKit 2 with Svelte 5 runes, TypeScript throughout.
-Three routes matching the three views. Cytoscape.js renders the graph.
+Every endpoint is a GET, and every number is computed from the database when it is requested.
 
-## v3 is the design base
+| Endpoint | What it returns |
+|---|---|
+| `/healthz` | This reports whether the database can be read. Docker's health check calls it. |
+| `/api/meta` | This returns the study, three counts and the value sets the filters use. |
+| `/api/overview` | This returns every dashboard number in one payload. |
+| `/api/attention` | This returns the stalled specimens and what each one is waiting on. |
+| `/api/graph` | This returns the cohort graph, which has 2,483 nodes and 5,162 edges, optionally limited to the first N patients. |
+| `/api/specimens/{id}` | This returns one specimen's identifier chain, steps and fractions. |
+| `/api/search?q=` | This finds any captured identifier and the specimen behind it. |
 
-`mockups/index-v3.html` was shaped by team feedback, so it is the reference and
-it is left untouched. The app carries over its stylesheet verbatim
-(`web/src/app.css`), its palette, node sizes and ontology anchors
-(`lib/graph/v3.ts`), its provenance closures (`lib/graph/model.ts`), its journey
-swimlane (`lib/workflow.ts`) and its cohort-flow ribbon
-(`lib/components/Sankey.svelte`).
+The routers hold no logic. `services/analytics.py` answers the counting questions in SQL, and `services/graph.py` assembles the graph the front end draws.
 
-**Rotation is kept, including the 3-D layout behind it.** Cytoscape.js draws in
-two dimensions, which stops it from *computing* a 3-D layout — not from
-displaying one. So the simulation lives in `lib/graph/force3d.ts`: it settles the
-cohort in three dimensions using v3's springs, and `lib/graph/rotator.ts`
-projects those coordinates into Cytoscape node positions every frame. Drag to
-rotate, the auto-spin and the depth cue all behave as they did in the mockup,
-with Cytoscape as the renderer.
+### The three views
 
-Two differences from v3, both forced by cohort size:
+| View | What it shows |
+|---|---|
+| Workflow | This view shows the planned PreDDLung journey as a swimlane, with one row per department or lab and one bar per step. It shows planned durations rather than measured data. |
+| Study dashboard | This view shows the headline figures, the sample types and their QC, time to the tumour board by phase, and the cohort flow. Three panels at the foot are left empty for the team to decide. |
+| Knowledge graph | This view shows every patient, sample, activity, aliquot, identifier, lab, information system, freezer box and operator as a graph you can filter, trace and rotate. |
 
-- Repulsion runs over a uniform grid with a cutoff rather than every pair. v3
-  capped its force view at 520 nodes because O(n²) stops holding a frame rate;
-  the grid is near-linear, so the whole cohort settles — 724 nodes in about
-  0.6 s, and 1196 with the ID chain switched on.
-- Settling runs in slices off the animation frame, so the page stays responsive
-  and reports progress instead of freezing.
+The knowledge graph has four layouts, and all of them are three-dimensional and can be rotated.
 
-The settle runs behind a loading state rather than on screen. Watching a cloud
-explode out of the origin and re-frame itself several times is noise, not
-information — so the canvas stays covered, the progress is reported, and the
-viewport is framed exactly once, when there is a layout worth looking at.
+| Layout | What position means |
+|---|---|
+| Force | Distance shows how tightly two things belong together. Each edge type has its own spring length, so one patient's material pulls into a clump and shared things such as a lab, an operator or a freezer box settle between clumps. |
+| Shell · progress | Distance from the centre shows how far the material got. The MTB Portal sits at the centre, and each patient's material lies along one spoke. |
+| Clustered · outcome | Each ball holds the material with one outcome, namely not collected, stalled, QC failure or on track. |
+| Grouped · by type | Each ball holds one kind of thing. Labs and information systems are laid out as a labelled column so that their names do not overlap. |
 
-Rotation is disabled in Layered and Grouped, exactly as in v3: those views are
-flat, and turning a flat picture only foreshortens an axis that carries meaning.
+Cytoscape draws in two dimensions, so the layout is computed separately. `lib/graph/force3d.ts` settles the cohort in three dimensions, and `lib/graph/rotator.ts` projects those coordinates into Cytoscape on every frame. The first settle happens behind a loading state, so the view is framed once there is a layout worth looking at.
 
-The part that makes the view an argument rather than a picture also survives:
-**distance means how tightly two things belong together.** Every edge type has
-its own rest length (`SPRING` in `lib/graph/v3.ts`), so one patient's samples
-pull into a clump and shared things — a platform, an operator, a freezer box —
-settle between the clumps. Measured after settling: 50 units for
-`derived_from` (tight), 95 for `has_sample` (family), 312 for `submitted_to`
-(loose) — the same ratios v3 measured.
+Rotation costs CPU while it spins. Cytoscape redraws every node and edge whenever positions move, and an earlier measurement found the main thread at about 67% while spinning and 1 to 2% when paused. The spin therefore runs at 20 frames per second, pauses when the tab is hidden or a node is selected, and does nothing once the layout has settled and the spin is off. If the browser's developer tools feel slow on the graph page, press ⏸ Rotation.
+
+In the graph view the rotation owns the mouse. A left drag turns the graph, a right or middle drag moves it, and the wheel zooms toward the pointer. Cytoscape's own panning and node dragging are switched off, because one gesture would otherwise drive two things at once.
+
+## Design decisions
+
+### The dictionary is the contract
+
+The export's columns, checkbox expansions and choice codes are derived from the REDCap dictionary in `data/reference/`, not written by hand. A newer dictionary therefore changes the export without code changes. A new field is exported automatically, but nothing fills it until someone adds it to the simulation.
+
+### The generator writes a real export
+
+The generator writes a genuine REDCap export, with all of REDCap's quirks, rather than tidy tables. The builder must decode it, so the work a live ingest will need is exercised on every build. `api/app/seed.py` is the mock of the production ingest, and nothing above the database changes when a weekly REDCap pipeline replaces it.
+
+### Counting and traversal are different questions
+
+A counting question such as "how many specimens cleared QC" is a `GROUP BY` over the entity tables. A traversal question such as "what else is in this freezer box" follows relationships. The schema keeps an `edge` table beside the entity tables so that traversal could later move to a graph store. In the current code the seeder fills that table but no query reads it, because the graph service rebuilds relationships from foreign keys.
+
+### Identifiers are objects
+
+A sample is renamed at every handover, from the eCRF study ID to the PAD number, the biobank barcode, the PMSC ID and the per-aliquot IDs. Reconciling that chain is the point of WP2, so every identifier is a node in the graph and a row in its own table. REDCap, Sympathy and Labware are linked to the identifiers they issue, and TakeCare records the study ID. The PMSC IDs carry no issuing system, because no source names one.
+
+### Labs and information systems are different things
+
+A lab is a place where work is done on the material. Pathology, the PMSC lab and the three analysis labs at SciLifeLab are labs. An information system is software where something is registered, and it does no work on the material. The journey ends in the Molecular Tumor Board Portal, which is an information system, so a sample that reached the end links to the portal rather than to a separate board node.
+
+### Some places say they cannot measure
+
+Where the data cannot support a number, the payload says so instead of hiding the row or inventing a value. The clearest case is the proteomics wait, described under known limits.
 
 ## Things the data forced
 
-Three places where the source disagreed with the mockup, each resolved in favour
-of the data and commented where it happens:
+Three places in the source disagreed with the mockup, and each was resolved in favour of the data.
 
-- **Sample types** are FFPE / Tissue / Biopsy / Blood, not the FFPE /
-  Fresh-Frozen / Blood the mockup guessed. The facets read the value set from
-  the export.
-- **A repeat is a whole new REDCap record**, so `repeat_of` runs specimen to
-  specimen, not aliquot to aliquot.
-- **The mass-spec QC (`ms_qcheck`) was missing from the graph artefact**, so the
-  entire proteomics stream arrived with no QC outcome. The seeder reads it from
-  the CSV and attaches it to the peptide, which is what was injected.
-
-## Rotation costs CPU while it spins
-
-Cytoscape redraws every node and edge whenever positions move, so an animated
-700-node graph is real work: measured on the graph view, the main thread runs at
-about 67% while spinning and 1–2% the moment rotation is paused or a flat layout
-is selected. That is why the spin runs at 20 fps rather than the display's 60,
-pauses itself when the tab is hidden, and does nothing at all once the layout has
-settled and the spin is off.
-
-If the browser devtools feel unresponsive on that page, it is this: press
-**⏸ Rotation** and the main thread is handed straight back. The other two views
-are idle throughout.
-
-**Who owns the drag.** In the force view the simulation owns node positions and
-the viewport, so Cytoscape's own panning and node-grabbing are switched off —
-otherwise one gesture drives two things at once and the frame slides out from
-under the graph while you turn it. The flat views are the opposite: nothing is
-animating there, so panning and grabbing are back on. For the duration of a
-rotate gesture the graph is stripped to plain dots (edges and glow dropped),
-which is worth about a fifth of the frame cost; they return the moment you let
-go, and a plain click never triggers it.
+| Topic | What the data says |
+|---|---|
+| Sample types | The sample types are FFPE, Tissue, Biopsy and Blood, not the FFPE, Fresh-Frozen and Blood the mockup guessed. The filters read the value set from the export. |
+| Repeats | A repeat is a whole new REDCap record, so `repeat_of` runs from specimen to specimen rather than from aliquot to aliquot. |
+| Mass-spec QC | The mass-spec QC (`ms_qcheck`) sits on the platform run in the graph, so the seeder reads it from the export and attaches it to the peptide that was injected. Without that, the proteomics stream would have no QC outcome. |
 
 ## Known limits
 
-- **Proteomics wait time cannot be measured.** The mass-spec run records a
-  returned date but no send date, so the turnaround row appears with "no send
-  date recorded" rather than being quietly dropped.
-- **The stall threshold is 30 days, flat.** One number may not fit every stage —
-  platform analysis legitimately takes weeks. Open question with the team.
-- **Yield is not quality.** QC here is concentration plus total yield plus a
-  Pass/Fail. There is no RIN, no DV200 and no purity ratio in the schema, so the
-  app cannot say whether material was intact. See `docs/questions.md`.
+| Limit | Why it matters |
+|---|---|
+| Proteomics wait time cannot be measured. | The mass-spec run records a returned date but no send date, so the dashboard shows the row with "no send date recorded". |
+| The stall threshold is a flat 30 days. | One number may not fit every stage, because analysis at the labs legitimately takes weeks. This is an open question with the team. |
+| Yield is not quality. | QC here is concentration, total yield and a pass or fail. The schema holds no RIN, DV200 or purity ratio, so the application cannot say whether material was intact. See `docs/questions.md`. |
+| The two stall counts differ. | The builder counts 13 stalled records, including one consented patient still awaiting collection. The dashboard shows 12, because the database holds only collected specimens. |
 
-## Published as a static site
+## Known issues in the code
 
-The same application is published to GitHub Pages, so that colleagues can be
-sent a link rather than asked to install Docker.
+These were found while documenting the code on 2026-10-09, and none of them has been fixed yet.
 
-This is possible because the showcase asks the API exactly three questions —
-`/api/meta`, `/api/overview` and `/api/graph` — and every one of them returns
-the same answer for the whole life of a release. The database is built at
-release time from a seeded generator and nothing ever writes to it. So
-`api/export_static.py` calls the same service functions the routes call and
-writes those three responses out as files, and `VITE_STATIC_DATA=1` switches
-`lib/api.ts` over to reading them. About 520 KB of JSON replaces the entire
-service.
+| Issue | Detail |
+|---|---|
+| The shell layout's rings are labelled one stage off. | The API numbers stages from 1 and the ring labels count from 0, so a specimen at pathology sits on the ring labelled "PM-SC prep". The rings from "submitted" inward are correct. |
+| Identifiers and peptides are misplaced in the shell layout. | Every identifier lands on the pathology ring, and peptides fall off their patient's spoke because they derive from protein rather than from a specimen. |
+| Protein totals carry the wrong unit. | The Inspector labels every aliquot total in ng, but protein totals are in µg. |
+| Three browser tests import from an old location. | `loading.mjs`, `dragging.mjs` and `exporting.mjs` import puppeteer from the project's former directory and fail where it is absent. |
+| The builder writes duplicate edges. | Shared PAD numbers produce 13 duplicate `ISSUED_BY` edges, and there is one duplicate `REPEAT_OF` edge. |
+| Some code is no longer used. | `/api/attention` and the graph page's `?specimen=` link served an attention list the dashboard no longer shows. `lib/stores/asOf.svelte.ts` is imported by nothing, and `cytoscape-dagre`, `cytoscape-fcose` and `@sveltejs/adapter-auto` are declared but not imported. |
+| The front-end types are written by hand. | `web/src/lib/types.ts` mirrors the API's payloads, so a renamed field in the API passes the type check and fails only in the browser. |
+
+## Shipping it
+
+### Docker
+
+`docker build -t pmsc:latest .` builds one image that serves the API and the front end from port 8000. The first stage compiles the front end with Node. The second installs the API, generates the cohort, builds the graph, seeds the database and copies the compiled front end in, so the image needs no network, database server or configuration. It runs as a non-root user and reports its health through `/healthz`. `DOCKER.md` explains every command for someone new to Docker.
+
+### GitHub Pages
+
+The showcase is also published as a static site, so colleagues can open a link instead of installing anything. This works because the published front end asks only three questions, `/api/meta`, `/api/overview` and `/api/graph`, and their answers never change within a release. `api/export_static.py` calls the same service functions the routes use and writes the three answers as files, and `VITE_STATIC_DATA=1` makes `web/src/lib/api.ts` read them.
 
 ```bash
-cd api && .venv/bin/python export_static.py     # writes web/static/data/*.json
+cd api && .venv/bin/python export_static.py
 cd ../web && BASE_PATH=/PMSC-dashboard VITE_STATIC_DATA=1 npm run build:pages
 ```
 
-`.github/workflows/pages.yml` does the same on every push to `main`, and it
-regenerates the cohort rather than carrying the JSON in git, for the same reason
-the container does: the same commit must always give the same numbers.
+`.github/workflows/pages.yml` does the same on every push to `main`, and it regenerates the cohort each time so the published numbers cannot drift from the code. `BASE_PATH` is needed because Pages serves a project site from a subdirectory named after the repository. `build:pages` copies `index.html` to `404.html`, because that is how Pages serves `/graph` and `/dashboard`, which exist only inside the application.
 
-Two details are there because of how Pages works rather than because of
-anything in this application. `BASE_PATH` exists because a project site is
-served from a subdirectory named after the repository, so every asset has to be
-addressed relative to it. `build:pages` copies `index.html` to `404.html`
-because that is the only way to tell Pages what to do with `/graph` and
-`/dashboard`, which are routes the application knows about and the server does
-not; the front page still answers 200, and a deep link is answered with the
-application and a 404 status.
+The static site is a published build of a fixed cohort. The real system will serve data that changes, and it still needs the API and the database.
 
-**This does not change the design.** The argument above for deriving every
-number in SQL from a database still holds for the system this is a showcase
-for. A published build of a fixed cohort is a different problem from a service
-over data that moves.
+## Testing
+
+| Suite | How to run it | What it covers |
+|---|---|---|
+| API | `cd api && .venv/bin/python -m pytest` | Eighteen checks run against the seeded database. Each one guards something that was wrong at some point, such as the funnel never growing along a stream, the unit change at AllPrep, and the issuing system on each identifier. |
+| Type check | `cd web && npm run check` | This runs `svelte-check` over the front end. |
+| Browser | `cd web && npm run test:e2e` | Seven scripts drive a real Chrome against the dev server, which must be running at port 5173. They check loading, settling, rotation, dragging, zooming, filtering, export and the cohort flow. |
+
+The API tests depend on the seeded data, so a cohort generated with another seed can fail them. The generator and the builder have no tests of their own. Their checks are described in `data/README.md` but are not run automatically.
+
+`TESTING.md` is a different kind of document. It is a walkthrough for colleagues reviewing the showcase, with what to try in each view.
+
+## Further documentation
+
+| Document | What it covers |
+|---|---|
+| `docs/codebase/README.md` | This is an overview of the code, with the data flow, key files and dependencies. |
+| `docs/codebase/ARCHITECTURE.md` | This covers the design principles, directory structure, request routing, front-end structure and cross-cutting concerns. |
+| `docs/codebase/COMPONENTS.md` | This describes every module and component, with its responsibility, main functions and dependencies. |
+| `docs/codebase/DIAGRAMS.md` | This holds diagrams of the system, the schema, the generator phases, the request flow and the stage states. |
+| `docs/codebase/PATTERNS.md` | This explains the patterns the code relies on, each with an excerpt from the code. |
+| `docs/codebase/USECASES.md` | This walks through seven tasks from start to finish, from finding stalled samples to loading a real export. |
+| `data/README.md` | This explains how the synthetic cohort is generated and built, and how to tune it or point it at a real export. |
+| `docs/domain-brief.md` and `docs/lab-concepts.md` | These explain the project, the PreDDLung pilot and the laboratory concepts behind the data. |
+| `docs/design-decisions.md` | This records the design choices behind the dashboard and the knowledge graph. |
+| `docs/questions.md` | This lists the open questions for the team. |
+| `DOCKER.md` | This explains how to build and run the container. |
+| `TESTING.md` | This guides colleagues reviewing the showcase. |
