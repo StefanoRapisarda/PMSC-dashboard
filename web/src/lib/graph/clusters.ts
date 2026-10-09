@@ -32,6 +32,22 @@ const SPACING = 34, GAP = 130;
 const A1 = 0.8191725133961644, A2 = 0.6710436067037893;
 const frac = (v: number) => v - Math.floor(v);
 
+/**
+ * Labs and information systems carry their names at all times, and a name is
+ * far wider than the gap between two nodes in a ball, so five of them in one
+ * small ball printed on top of each other. A group made only of these is laid
+ * out as a vertical column instead, one name above the next. The idle spin
+ * turns about the vertical axis, so a column stays a column as it turns and its
+ * names never cross. LABEL_STEP is one node plus the line of text above it.
+ */
+const LABELLED = new Set(['lab', 'system']);
+const LABEL_STEP = 40;
+
+/** The k-th of n points down a vertical column centred on the origin. */
+function columnPoint(k: number, n: number): Point3 {
+  return { x: 0, y: (k - (n - 1) / 2) * LABEL_STEP, z: 0 };
+}
+
 /** Radius a ball needs to hold `n` nodes SPACING apart. */
 function ballRadius(n: number): number {
   return SPACING * Math.cbrt((3 * Math.max(1, n)) / (4 * Math.PI));
@@ -97,7 +113,14 @@ export function clusterPlacement(ids: number[], model: GraphModel,
   }
 
   const keys = [...members.keys()].sort();
-  const radii = keys.map((k) => ballRadius(members.get(k)!.length));
+  const column = new Set(keys.filter((k) =>
+    members.get(k)!.every((id) => LABELLED.has(model.nodes[id]?.type ?? ''))));
+  /* a column's "radius" is half its height, so the spacing between groups
+     still keeps it clear of its neighbours */
+  const radii = keys.map((k) => {
+    const n = members.get(k)!.length;
+    return column.has(k) ? Math.max(SPACING, ((n - 1) * LABEL_STEP) / 2) : ballRadius(n);
+  });
   const directions = keys.map((_, i) => ringDirection(i, keys.length));
 
   /* how close two of these directions get on the unit sphere — one ball centre
@@ -119,8 +142,12 @@ export function clusterPlacement(ids: number[], model: GraphModel,
     const list = members.get(key)!;
     const centre = directions[i];
     const R = radii[i];
-    list.forEach((id, k) => {
-      const p = ballPoint(k, list.length, R);
+    /* in a column, keep the names in alphabetical order so it reads as a list */
+    const ordered = column.has(key)
+      ? [...list].sort((a, b) => model.nodes[a].label.localeCompare(model.nodes[b].label))
+      : list;
+    ordered.forEach((id, k) => {
+      const p = column.has(key) ? columnPoint(k, list.length) : ballPoint(k, list.length, R);
       positions.set(id, {
         x: centre.x * spread + p.x,
         y: centre.y * spread + p.y,

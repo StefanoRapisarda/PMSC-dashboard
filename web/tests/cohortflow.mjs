@@ -39,7 +39,7 @@ const hints = await page.$$eval('.hint', (els) => els.map((e) => e.textContent).
 for (const [name, value] of [
   ['Collected', stage('Collected')], ['Pathology', stage('Pathology')],
   ['PM-SC prep', stage('PM-SC prep')], ['AllPrep', stage('AllPrep')],
-  ['Data back', flow.analysis.count], ['Tumour board', flow.mtb.count],
+  ['Data back', flow.analysis.count], ['MTB Portal', flow.mtb.count],
 ]) check(`${name} shows ${value}`, labels.includes(String(value)));
 
 check('no invented columns', !text.includes('Study coordination') && !text.includes('Surgery |'));
@@ -113,13 +113,13 @@ for (const phase of turn.phases) {
         `${phase.days} days ${phase.where}`);
 }
 check('phases say where the time is spent',
-      turnText.includes('in house') && turnText.includes('at the platforms'));
+      turnText.includes('in house') && turnText.includes('at the analysis labs'));
 /* "20.5 d ours" read as "d-hours", and "ours" is not a professional label */
 check('no informal or ambiguous unit labels',
       !/\bours\b/.test(turnText) && !/\d\s*d\s+ours/.test(turnText));
-check('the platform segment is marked parallel', turnText.toLowerCase().includes('parallel'));
-check('the individual platforms sit inside that segment, not beside it',
-      turn.platforms.filter((p) => p.median_days != null)
+check('the analysis-lab segment is marked parallel', turnText.toLowerCase().includes('parallel'));
+check('the individual analysis labs sit inside that segment, not beside it',
+      turn.analysis_labs.filter((p) => p.median_days != null)
         .every((p) => turnText.includes(p.name.split(',')[0])));
 check('turnaround names the longest step handled in house',
       /Longest step handled in house/.test(turnText));

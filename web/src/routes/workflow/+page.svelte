@@ -6,7 +6,7 @@
      names of the milestones. The page shows the journey as planned. It reads no
      measured data, which belongs on the study dashboard. */
   import {
-    LANES, PHASES, PLATFORM_LANES, STAGES,
+    LANES, PHASES, ANALYSIS_LAB_LANES, STAGES,
     barWidth, cumulative, formatDuration, type Phase,
   } from '$lib/workflow';
 
@@ -84,9 +84,9 @@
         x += w + GAP;
         return;
       }
-      /* the three platforms run side by side, so they share one width: the widest label's */
-      const w = Math.max(...PLATFORM_LANES.map(([, label]) => barWidth(s.dur, label)));
-      PLATFORM_LANES.forEach(([lane, label]) => out.push({ i, lane, x, w, label, dur: s.dur }));
+      /* the three analysis labs run side by side, so they share one width: the widest label's */
+      const w = Math.max(...ANALYSIS_LAB_LANES.map(([, label]) => barWidth(s.dur, label)));
+      ANALYSIS_LAB_LANES.forEach(([lane, label]) => out.push({ i, lane, x, w, label, dur: s.dur }));
       x += w + GAP;
     });
     return out;
@@ -101,9 +101,9 @@
   const milestones = $derived([
     { x: barOf(step('Surgery')).x, name: 'Surgery' },
     { x: barOf(step('Withdraw for prep (UTTAG)')).x, name: 'Prep starts' },
-    { x: barOf(step('Platform analysis')).x, name: 'Sent to platforms' },
+    { x: barOf(step('Analysis at the labs')).x, name: 'Sent to analysis labs' },
     { x: barOf(step('Data analysis')).x, name: 'Data back' },
-    { x: barOf(step('Molecular Tumor Board')).x, name: 'Tumour board' },
+    { x: barOf(step('Order in the MTB Portal')).x, name: 'MTB Portal' },
   ]);
 
   const allprep = step('AllPrep extraction') + 1;
@@ -199,7 +199,7 @@
           {PHASES[stage.phase][0]}</span>
         <h2>{selected + 1}. {stage.name}</h2>
         <div class="kv"><span class="k">Location</span><span class="v">{stage.loc || '—'}</span></div>
-        <div class="kv"><span class="k">System</span><span class="v">{stage.system || '—'}</span></div>
+        <div class="kv"><span class="k">Information system</span><span class="v">{stage.system || '—'}</span></div>
         <div class="kv"><span class="k">Performed by</span><span class="v">{stage.actor || '—'}</span></div>
         <div class="kv"><span class="k">ID assigned</span><span class="v">{stage.id || '—'}</span></div>
         <div class="kv"><span class="k">Planned time</span>

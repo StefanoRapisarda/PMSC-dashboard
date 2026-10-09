@@ -21,7 +21,7 @@ REDCAP_CSV = SOURCE_DIR / "redcap_export.csv"
 MANIFEST_JSON = SOURCE_DIR / "manifest.json"
 
 # A specimen or aliquot with no next step for this long is "stalled". Provisional:
-# one flat number may not fit every stage — platform analysis legitimately takes
+# one flat number may not fit every stage — analysis at the labs legitimately takes
 # weeks. Open question with the team.
 STALL_THRESHOLD_DAYS = 30
 

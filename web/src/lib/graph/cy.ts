@@ -24,7 +24,7 @@ export type Layout = 'force' | 'shell' | 'clustered' | 'grouped';
  * The four outcome buckets the clustered view sorts material into.
  *
  * Ordered worst to best so the eye reads the clusters left to right as "what
- * needs attention" through to "fine". Nodes that are not material — platforms,
+ * needs attention" through to "fine". Nodes that are not material — labs, systems,
  * boxes, operators, the board — have no outcome and are not pretended into one;
  * they get their own cluster and are named as context.
  */
@@ -92,9 +92,10 @@ export function style(): cytoscape.StylesheetStyle[] {
        diameter onto each node as data, so the rule stays declarative and
        overrides the per-type sizes above only while the class is set. */
     { selector: 'node.bydegree', style: { width: 'data(size)', height: 'data(size)' } },
-    /* platforms are the only nodes labelled at rest, as in v3 */
+    /* labs and systems are the only nodes labelled at rest, as in v3, because
+       they are the few named hubs the rest of the graph hangs from */
     {
-      selector: 'node[type="platform"], node[type="mtb"]',
+      selector: 'node[type="lab"], node[type="system"]',
       style: {
         label: 'data(label)', color: '#c3d0e2', 'font-size': 11,
         'text-valign': 'top', 'text-margin-y': -4, 'text-outline-width': 2,
@@ -319,10 +320,13 @@ export function drawHulls(cy: Core, canvas: HTMLCanvasElement, by: 'type' | 'out
   ctx.clearRect(0, 0, width, height);
 
   const groups: Record<string, { x: number; y: number }[]> = {};
+  /* groups holding nodes whose names are printed at rest: labs and systems */
+  const named = new Set<string>();
   cy.nodes().not('.hidden').forEach((node) => {
     const key = (node.data(by) as string) ?? 'context';
     const p = node.renderedPosition();
     (groups[key] = groups[key] || []).push(p);
+    if (node.data('type') === 'lab' || node.data('type') === 'system') named.add(key);
   });
 
   for (const key in groups) {
@@ -332,7 +336,11 @@ export function drawHulls(cy: Core, canvas: HTMLCanvasElement, by: 'type' | 'out
     mx /= points.length; my /= points.length;
     let r = 0;
     points.forEach((p) => { r = Math.max(r, Math.hypot(p.x - mx, p.y - my)); });
-    r += 22;
+    /* A name sits above its node, so a circle drawn round the nodes alone cuts
+       through the top name, and the header written above the circle lands on
+       it. Where names are printed, the circle also takes in the top one: half
+       the node, the margin and a line of text, all of which scale with zoom. */
+    r += named.has(key) ? Math.max(22, 44 * cy.zoom()) : 22;
     const colour = by === 'outcome'
       ? OUTCOME_COLOR[key as Outcome] ?? '#888'
       : COLORS[key as NodeType] ?? '#888';

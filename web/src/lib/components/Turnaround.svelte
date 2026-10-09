@@ -10,13 +10,13 @@
      Time is grouped by the three phases laboratory medicine already uses for
      turnaround — pre-analytical, analytical, post-analytical. That is the
      conventional vocabulary, it maps cleanly onto these steps, and it keeps the
-     distinction that matters: the analytical phase belongs to the platforms,
+     distinction that matters: the analytical phase belongs to the analysis labs,
      the other two are handled in house.
 
      Two things it is careful about, because the previous version was not:
-       * The three platforms run in parallel on three fractions of one specimen.
+       * The three analysis labs run in parallel on three fractions of one specimen.
          They are ONE segment of the path, measured per specimen from first
-         dispatch to last result; the individual platforms sit inside it rather
+         dispatch to last result; the individual labs sit inside it rather
          than as peers of the sequential steps, so nothing invites adding them up.
        * A week in a freezer is not hands-on work, but it is still pre-analytical
          time handled in house — which is the distinction that leads to a
@@ -36,15 +36,15 @@
 
   /* the longest step handled in house — the one that can actually be acted on */
   const biggestInHouse = $derived.by(() => {
-    const inHouse = turnaround.segments.filter((s) => s.owner === 'lab');
+    const inHouse = turnaround.segments.filter((s) => s.owner === 'in_house');
     return inHouse.reduce((a, b) => ((b.median_days ?? 0) > (a.median_days ?? 0) ? b : a),
                           inHouse[0]);
   });
 
   const days = (n: number | null) => `${n} ${n === 1 ? 'day' : 'days'}`;
 
-  const measurable = $derived(turnaround.platforms.filter((p) => p.median_days != null));
-  const unmeasurable = $derived(turnaround.platforms.filter((p) => p.median_days == null));
+  const measurable = $derived(turnaround.analysis_labs.filter((p) => p.median_days != null));
+  const unmeasurable = $derived(turnaround.analysis_labs.filter((p) => p.median_days == null));
 </script>
 
 <div class="head">
@@ -77,7 +77,7 @@ The median says what is typical; this says how bad the slow tail gets.">9 in 10 
 
 <!-- the path itself: width is time, so the bottleneck is visible rather than arithmetic -->
 <div class="strip" role="img"
-     aria-label="Time from surgery to tumour board, split by who controls each step">
+     aria-label="Time from surgery to the order in the tumour board portal, split by who controls each step">
   {#each turnaround.segments as segment}
     {@const share = ((segment.median_days ?? 0) / total) * 100}
     {#if share > 0}
@@ -115,11 +115,11 @@ The median says what is typical; this says how bad the slow tail gets.">9 in 10 
 
     {#if segment.parallel}
       <div class="inside">
-        {#each measurable as platform}
-          <span>{platform.name.split(',')[0]} <b>{days(platform.median_days)}</b></span>
+        {#each measurable as lab}
+          <span>{lab.name.split(',')[0]} <b>{days(lab.median_days)}</b></span>
         {/each}
-        {#each unmeasurable as platform}
-          <span class="muted">{platform.name.split(',')[0]} — {platform.note}</span>
+        {#each unmeasurable as lab}
+          <span class="muted">{lab.name.split(',')[0]} — {lab.note}</span>
         {/each}
       </div>
     {/if}
@@ -127,7 +127,7 @@ The median says what is typical; this says how bad the slow tail gets.">9 in 10 
 </div>
 
 <p class="hint" style="margin-top:10px">
-  {turnaround.note} The three platforms work at the same time, so their segment is measured
+  {turnaround.note} The three analysis labs work at the same time, so their segment is measured
   per sample from the first dispatch to the last result — the actual critical path, not
   three waits added together.
 </p>

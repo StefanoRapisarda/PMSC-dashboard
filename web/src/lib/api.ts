@@ -58,7 +58,7 @@ export const api = {
     get<GraphPayload>(`/api/graph${patients ? `?patients=${patients}` : ''}`, f),
   specimen: (id: number, f?: typeof fetch) => get<SpecimenDetail>(`/api/specimens/${id}`, f),
   search: (q: string, f?: typeof fetch) =>
-    get<{ query: string; hits: { value: string; system: string; owner_type: string;
+    get<{ query: string; hits: { value: string; scheme: string; owner_type: string;
                                  specimen_id: number | null }[] }>(
       `/api/search?q=${encodeURIComponent(q)}`, f),
 };

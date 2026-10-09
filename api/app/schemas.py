@@ -29,8 +29,9 @@ class Overview(BaseModel):
 class GraphPayload(BaseModel):
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
-    platforms: dict[str, int]
-    mtb: int
+    labs: dict[str, int]
+    systems: list[int]
+    portal: int | None
     sample_types: list[str]
     activity_kinds: list[str]
     counts: dict[str, int]

@@ -48,7 +48,7 @@
   /** The order a family reads in: down the pipeline, rather than whatever order
       the graph happened to return them in. */
   const ORDER: NodeType[] = ['patient', 'identifier', 'sample', 'activity', 'aliquot',
-                             'qc', 'deviation', 'storage', 'operator', 'platform', 'mtb'];
+                             'qc', 'deviation', 'storage', 'operator', 'lab', 'system'];
 
   const cards = $derived.by(() => {
     if (!family) return node ? [node] : [];
@@ -272,9 +272,13 @@
         <div class="kv"><span class="k">Data back</span>
           <span class="v">{item.returned_on ?? '—'}</span></div>
       {:else if item.type === 'identifier'}
-        <div class="kv"><span class="k">Issuing system</span><span class="v">{item.system}</span></div>
-        <div class="kv"><span class="k">ID it issues</span>
+        <div class="kv"><span class="k">Kind of identifier</span><span class="v">{item.scheme}</span></div>
+        <div class="kv"><span class="k">Value</span>
           <span class="v mono">{item.value}</span></div>
+        <div class="kv"><span class="k">Issued by</span>
+          <span class="v">{#if item.issued_by}{item.issued_by}{:else}<span style="color:var(--muted);font-weight:400">not named in any source</span>{/if}</span></div>
+      {:else if item.type === 'lab' || item.type === 'system'}
+        <div class="kv"><span class="k">Kind</span><span class="v">{item.kind ?? '—'}</span></div>
       {:else if item.type === 'deviation'}
         <div class="kv"><span class="k">Class</span><span class="v">{item.devtype}</span></div>
         {#if item.note}<p class="hint">{item.note}</p>{/if}
@@ -307,7 +311,7 @@
         <p class="sub">Known as</p>
         {#each namesOf(item) as identifier}
           <div class="kv">
-            <span class="k">{identifier.system}</span>
+            <span class="k">{identifier.scheme}</span>
             <span class="v mono">{identifier.value}</span>
           </div>
         {/each}

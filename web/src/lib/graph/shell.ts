@@ -2,7 +2,7 @@
  * The cohort as a globe: distance from the centre is how far the material got.
  *
  * The force layout places a node by how many edges it has. That is a fact about
- * the graph, not about the study — which is why the three platform nodes ended
+ * the graph, not about the study — which is why the three analysis-lab nodes ended
  * up in the middle: each has hundreds of springs pulling on it from every
  * direction, so it cannot move, and everything else arranges itself around that
  * accident.
@@ -10,7 +10,7 @@
  * Here position is computed, not simulated, from two things that mean something:
  *
  *   * RADIUS is the stage a thing reached, outer edge to core. A patient sits on
- *     the surface; a specimen that made it to the tumour board sits near the
+ *     the surface; a specimen that made it to the tumour board portal sits near the
  *     centre. The funnel is then a density gradient you can see: a dense shell
  *     outside, thinning inward. A spoke that stops short is material that
  *     stopped.
@@ -31,7 +31,7 @@ import type { GraphNode } from '$lib/types';
     already puts on every specimen as `reached`. */
 export const STAGES = [
   'enrolled', 'collected', 'pathology', 'PM-SC prep', 'AllPrep',
-  'QC', 'submitted', 'data back', 'tumour board',
+  'QC', 'submitted', 'data back', 'MTB Portal',
 ];
 const LAST = STAGES.length - 1;
 
@@ -79,7 +79,7 @@ export function ringsFor(counts: Map<number, number>): Ring[] {
 }
 
 /** Radius for a stage, including the half-steps used by things that sit between
-    two named stages (a platform is past submitted, short of data back). */
+    two named stages (an analysis lab is past submitted, short of data back). */
 function radiusAt(rings: Ring[], stage: number): number {
   if (stage <= 0) return rings[0].r;
   if (stage >= LAST) return rings[LAST].r;
@@ -95,15 +95,18 @@ function radiusAt(rings: Ring[], stage: number): number {
  * Specimens carry `reached` from the API. Everything else is placed by what it
  * IS: an AllPrep activity happens at AllPrep whatever specimen it touched, and
  * an aliquot's own dates say how far that fraction itself travelled — which is
- * the point, because a specimen can reach the tumour board while one of its
+ * the point, because a specimen can reach the tumour board portal while one of its
  * three fractions is still sitting in a freezer.
  */
 export function stageOf(node: GraphNode, ownerStage: number | null): number {
   switch (node.type) {
     case 'patient': return 0;
     case 'sample': return node.reached ?? 0;
-    case 'mtb': return LAST;
-    case 'platform': return 6.5;              // between submitted and data back
+    /* an analysis lab sits between submitted and data back; the in-house labs
+       sit at the steps they carry out */
+    case 'lab': return node.analysis ? 6.5 : node.label.startsWith('Pathology') ? 3 : 4;
+    /* software is not a stage, except the portal the journey ends in */
+    case 'system': return node.endpoint ? LAST : -1;
     case 'storage': return 4.5;               // where material waits, mid-pipeline
     case 'operator': return -1;               // an agent, not a stage — see R_AGENT
     case 'aliquot':
@@ -179,7 +182,7 @@ function patientOf(node: GraphNode, model: GraphModel): number | null {
       const ownerNode = model.nodes[owner];
       return ownerNode ? patientOf(ownerNode, model) : null;
     }
-    default: return null;                     // platform, storage, operator, mtb
+    default: return null;                     // lab, system, storage, operator
   }
 }
 
@@ -238,14 +241,14 @@ export function shellPlacement(ids: number[], model: GraphModel): ShellPlacement
   }
   const spokes = Math.max(1, order.size);
 
-  /* Things with no patient — platforms, boxes, operators — get their own even
+  /* Things with no patient — labs, systems, boxes, operators — get their own even
      spread so they do not pile onto somebody's spoke. Spread on a great circle
      rather than over the sphere: there are only a handful, and a sphere spread
-     put the three platforms close enough together on screen that their labels
-     overlapped. The board is excluded because it sits at the centre. */
+     put the three analysis labs close enough together on screen that their labels
+     overlapped. The portal is excluded because it sits at the centre. */
   const orphans = ids.filter((id) => owner.get(id) == null
                                   && model.nodes[id]?.type !== 'patient'
-                                  && model.nodes[id]?.type !== 'mtb');
+                                  && !model.nodes[id]?.endpoint);
   const orphanOrder = new Map<number, number>();
   orphans.forEach((id, i) => orphanOrder.set(id, i));
 
@@ -257,7 +260,7 @@ export function shellPlacement(ids: number[], model: GraphModel): ShellPlacement
     const st = stage.get(id) ?? 0;
 
     /* the board is the destination, so it is the destination: dead centre */
-    if (node.type === 'mtb') { positions.set(id, { x: 0, y: 0, z: 0 }); continue; }
+    if (node.endpoint) { positions.set(id, { x: 0, y: 0, z: 0 }); continue; }
 
     const patient = owner.get(id) ?? null;
     const direction = patient != null && order.has(patient)

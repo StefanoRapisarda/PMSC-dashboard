@@ -184,7 +184,7 @@ def flow(session: Session) -> dict:
         "analysis": {"stage": "Data back", "count": analysed_specimens, "unit": "specimens"},
         "stalled": stalled_total,
         "stall_threshold_days": config.STALL_THRESHOLD_DAYS,
-        "mtb": {"stage": "Tumour board", "count": at_least("mtb"), "unit": "specimens"},
+        "mtb": {"stage": "MTB Portal", "count": at_least("mtb"), "unit": "specimens"},
         "specimen_unit": "specimens", "aliquot_unit": "aliquots",
         "note": ("Counts are specimens up to AllPrep and aliquots after; one specimen yields "
                  "up to three. The protein stream is QC'd after its mass-spec run, not before."),
@@ -244,14 +244,15 @@ def _gap(a: date | None, b: date | None) -> float | None:
 
 
 def turnaround(session: Session) -> dict:
-    """How long a sample takes from surgery to tumour board, and where the time goes.
+    """How long a sample takes from surgery to its order in the tumour board portal,
+    and where the time goes.
 
     Turnaround is a headline endpoint for a feasibility study of this kind, so the
     question this answers is "39 days — and which part is ours?".
 
     Two things the previous shape got wrong and this one is built around:
 
-      * The three platforms run in PARALLEL on three fractions of one specimen.
+      * The three analysis labs run in PARALLEL on three fractions of one specimen.
         Listing them as rows invites adding them up, which is simply wrong. They
         are one segment of the path, measured per specimen from the first
         dispatch to the last result — the real critical path, not a max of
@@ -260,7 +261,7 @@ def turnaround(session: Session) -> dict:
         turnaround — pre-analytical, analytical, post-analytical. That is the
         conventional vocabulary, it maps cleanly onto these steps, and it keeps
         the distinction that matters: the analytical phase belongs to the
-        platforms, the other two are handled in house.
+        analysis labs, the other two are handled in house.
     """
     activity_dates: dict[int, dict[str, date]] = {}
     for specimen_id, kind, when in session.execute(
@@ -298,36 +299,36 @@ def turnaround(session: Session) -> dict:
 
     segments = [
         {"key": "surgery_pathology", "label": "Surgery → pathology",
-         "owner": "lab", "phase": "pre_analytical",
+         "owner": "in_house", "phase": "pre_analytical",
          "detail": "The specimen reaches pathology the same day it is taken.",
          **measure([(collected.get(i), slot_of[i].get("pathology")) for i in ids])},
         {"key": "at_pathology", "label": "Held at pathology",
-         "owner": "lab", "phase": "pre_analytical",
+         "owner": "in_house", "phase": "pre_analytical",
          "detail": "Cut, racked and frozen, then waiting to be collected for prep.",
          **measure([(slot_of[i].get("pathology"), prep_date(slot_of[i])) for i in ids])},
         {"key": "prep", "label": "Prep → extraction",
-         "owner": "lab", "phase": "pre_analytical",
+         "owner": "in_house", "phase": "pre_analytical",
          "detail": "Cryoprep or sectioning, then the AllPrep co-extraction.",
          **measure([(prep_date(slot_of[i]), slot_of[i].get("allprep")) for i in ids])},
         {"key": "dispatch", "label": "QC → dispatched",
-         "owner": "lab", "phase": "pre_analytical",
-         "detail": "Concentration and QC, then the first fraction leaves for a platform.",
+         "owner": "in_house", "phase": "pre_analytical",
+         "detail": "Concentration and QC, then the first fraction leaves for an analysis lab.",
          **measure([(slot_of[i].get("allprep"), first_sent.get(i)) for i in ids])},
-        {"key": "platforms", "label": "At the platforms",
-         "owner": "platform", "phase": "analytical", "parallel": True,
+        {"key": "analysis_labs", "label": "At the analysis labs",
+         "owner": "analysis_lab", "phase": "analytical", "parallel": True,
          "detail": "Three fractions analysed at the same time. Measured per specimen "
                    "from the first dispatch to the last result, so this is the real "
                    "critical path rather than the sum of three waits.",
          **measure([(first_sent.get(i), last_returned.get(i)) for i in ids])},
-        {"key": "tumour_board", "label": "Results → tumour board",
-         "owner": "lab", "phase": "post_analytical",
-         "detail": "Data analysed and taken to the molecular tumour board.",
+        {"key": "tumour_board", "label": "Results → MTB Portal",
+         "owner": "in_house", "phase": "post_analytical",
+         "detail": "Data analysed, then the case is ordered in the Molecular Tumor Board Portal.",
          **measure([(last_returned.get(i), slot_of[i].get("mtb")) for i in ids])},
     ]
 
-    # the individual platforms, shown inside the parallel segment rather than as
-    # peers of the sequential steps
-    platforms = []
+    # the individual analysis labs, shown inside the parallel segment rather
+    # than as peers of the sequential steps
+    analysis_labs = []
     for facility_id, name in session.execute(select(Facility.id, Facility.name)).all():
         rows = session.execute(
             select(PlatformRun.turnaround_days, PlatformRun.sent_on, PlatformRun.returned_on)
@@ -343,12 +344,12 @@ def turnaround(session: Session) -> dict:
                 if gap is not None and gap >= 0:
                     gaps.append(gap)
         if gaps:
-            platforms.append({"name": name, "n": len(gaps), "median_days": _median(gaps),
+            analysis_labs.append({"name": name, "n": len(gaps), "median_days": _median(gaps),
                               "p90_days": _percentile(gaps, 0.9)})
         else:
             # the mass spec runs in house: a returned date, but nothing was sent,
             # so there is no handover to time. Say so rather than omit the row.
-            platforms.append({"name": name, "n": len(rows), "median_days": None,
+            analysis_labs.append({"name": name, "n": len(rows), "median_days": None,
                               "p90_days": None,
                               "note": "no send date recorded — cannot be measured"})
 
@@ -360,7 +361,7 @@ def turnaround(session: Session) -> dict:
     phases = [
         {"key": "pre_analytical", "label": "Pre-analytical", "where": "in house",
          "days": phase_total("pre_analytical")},
-        {"key": "analytical", "label": "Analytical", "where": "at the platforms",
+        {"key": "analytical", "label": "Analytical", "where": "at the analysis labs",
          "days": phase_total("analytical")},
         {"key": "post_analytical", "label": "Post-analytical", "where": "in house",
          "days": phase_total("post_analytical")},
@@ -369,11 +370,11 @@ def turnaround(session: Session) -> dict:
     return {
         "end_to_end": end_to_end,
         "segments": segments,
-        "platforms": platforms,
+        "analysis_labs": analysis_labs,
         "phases": phases,
         "in_house_days": round(phase_total("pre_analytical")
                                + phase_total("post_analytical"), 1),
-        "platform_days": phase_total("analytical"),
+        "analysis_lab_days": phase_total("analytical"),
         "note": ("Medians do not add: the median of the whole path is not the sum of the "
                  "medians of its parts, so the segments will not total the headline figure."),
         # kept so nothing else breaks while it is still referenced

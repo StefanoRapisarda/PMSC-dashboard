@@ -115,7 +115,7 @@ length, shuffles it, and deals it out.
 
 Each specimen is given a **complete** timeline first, as though nothing ever went
 wrong and the snapshot date did not exist: collection, pathology receipt, PM-SC
-preparation, AllPrep, QC, submission to each platform, data return, tumour board.
+preparation, AllPrep, QC, submission to each analysis lab, data return, tumour board.
 Each step is offset from the one before it by a range taken from the PreDDLung
 journey in `docs/domain-brief.md` §5.
 
@@ -133,7 +133,7 @@ ideal timeline back:
 **By the snapshot date.** Any milestone that falls after `AS_OF` has not
 happened yet and is dropped. This is what spreads the cohort across stages: a
 patient enrolled 18 months ago is finished, one enrolled last month is still
-waiting on a platform, one enrolled last week has nothing but a record.
+waiting on an analysis lab, one enrolled last week has nothing but a record.
 
 **By a forced stall.** Twelve specimens are picked to stop at a chosen stage and
 stay there. Candidates are filtered so the last recorded step lands between
@@ -292,12 +292,20 @@ Node ids are prefixed by kind, so they are readable and collision-free:
 | `PlatformRun` | `molecule`, `instrument`, `sent_on`, `returned_on`, `turnaround_days` |
 | `Deviation` | `deviation_type`, `note` |
 | `Activity` | `activity`, `date` |
-| `Identifier` | `system` |
+| `Identifier` | `scheme`, the kind of identifier, such as a PAD number |
+| `Facility` | `kind`. Each facility is a lab, meaning a place where work is done on the material. |
+| `InformationSystem` | `kind`. Each one is software where something is registered, such as REDCap or Labware. |
 | `StorageLocation` | `freezer`, `box`, `position` |
 
 Edge types: `HAS_PATIENT`, `HAS_SPECIMEN`, `IDENTIFIED_AS`, `DERIVED_FROM`,
 `HAS_QC`, `SUBMITTED_TO`, `RETURNED_DATA`, `RUN_AT`, `AT_FACILITY`, `USED`,
-`GENERATED`, `PERFORMED`, `ENROLLED`, `STORED_AT`, `HAS_DEVIATION`, `REPEAT_OF`.
+`GENERATED`, `PERFORMED`, `ENROLLED`, `STORED_AT`, `HAS_DEVIATION`, `REPEAT_OF`,
+`ISSUED_BY`, `RECORDED_IN`.
+
+`ISSUED_BY` joins an identifier to the system that issues it, and `RECORDED_IN`
+joins an identifier or an activity to a system that records it. Both are drawn
+only where a source names the system, so the PMSC sample and aliquot IDs carry
+neither.
 
 ### `aggregates.json`
 

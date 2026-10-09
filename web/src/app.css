@@ -5,7 +5,7 @@
 
 :root{
     --bg:#f4f6f8; --panel:#fff; --border:#e3e6ea; --ink:#2b2f36; --muted:#7a828c;
-    --patient:#ff6b9d; --sample:#2a9d8f; --aliquot:#e9c46a; --platform:#457b9d;
+    --patient:#ff6b9d; --sample:#2a9d8f; --aliquot:#e9c46a; --lab:#457b9d;
     --operator:#8d99ae; --study:#1d3557; --fail:#e76f51; --accent:#2a9d8f;
   }
   *{box-sizing:border-box}
@@ -152,7 +152,7 @@
   .step .ti{font-weight:600;margin:3px 0}
   .step .dt{font-size:12px;color:var(--muted)}
   .step.on-p{border-color:var(--patient)} .step.on-s{border-color:var(--sample)}
-  .step.on-a{border-color:var(--aliquot)} .step.on-pl{border-color:var(--platform)}
+  .step.on-a{border-color:var(--aliquot)} .step.on-pl{border-color:var(--lab)}
   .branch{margin:22px 0 0;padding:14px;border:1px dashed var(--fail);border-radius:10px;background:#fef6f3;max-width:640px}
   .branch b{color:var(--fail)}
   .swimtitle{margin:26px 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
@@ -160,7 +160,7 @@
   .swim .lane{color:var(--muted);font-size:13px}
   .swim .barwrap{position:relative;height:20px;background:#f0f2f4;border-radius:5px}
   .swim .seg{position:absolute;height:100%;border-radius:5px;background:var(--sample);opacity:.85}
-  .swim .seg.a{background:var(--aliquot)}.swim .seg.p{background:var(--platform)}.swim .seg.f{background:var(--fail)}
+  .swim .seg.a{background:var(--aliquot)}.swim .seg.p{background:var(--lab)}.swim .seg.f{background:var(--fail)}
   .prov .mtitle{margin:16px 0 4px;font-size:14px;color:var(--patient)}
   .prov .mermaid{background:#fafafa;border:1px solid var(--border);border-radius:8px;padding:14px;margin:4px 0 16px;text-align:center;overflow:auto}
 

@@ -10,7 +10,7 @@ export interface Stage {
   loc: string; system: string; actor: string; id: string;
   dur: number; durnote?: string; desc: string; note?: string;
   field?: string;
-  /** The custodian's row. Platform analysis has none: it is drawn once per platform lane. */
+  /** The participant's row. Analysis at the labs has none: it is drawn once per analysis-lab row. */
   lane?: string;
   /** A moment rather than a piece of work. It is drawn as a pin, not a bar. */
   event?: boolean;
@@ -30,10 +30,10 @@ export const LANES: [string, string][] = [
   ['coord', 'Study coordination · K'], ['or', 'Surgery · OR'], ['path', 'Pathology'],
   ['log', 'Logistics · biobank'], ['pmsc', 'PMSC lab · CCK'],
   ['scDNA', 'SciLifeLab · DNA'], ['scRNA', 'SciLifeLab · RNA'],
-  ['scProt', 'SciLifeLab · Protein'], ['mtb', 'Analysis & MTB'],
+  ['scProt', 'SciLifeLab · Protein'], ['mtb', 'Analysis & MTB Portal'],
 ];
 
-export const PLATFORM_LANES: [string, string][] = [
+export const ANALYSIS_LAB_LANES: [string, string][] = [
   ['scDNA', 'Clinical Genomics'], ['scRNA', 'Genomics Express'],
   ['scProt', 'Clinical Proteomics MS'],
 ];
@@ -62,7 +62,7 @@ export const STAGES: Stage[] = [
     system: '', actor: 'Surgeon', id: '', dur: 15,
     desc: 'Tumour tissue is placed in a designated can and into the transport bag.' },
   { name: 'Pathology — cut & rack', short: 'Cut and rack', phase: 'pathology', lane: 'path', loc: 'Pathology dept',
-    system: '', actor: 'Pathologist', id: 'PAD number', dur: 15, field: 'pat_sample_date',
+    system: 'Sympathy (pathology lab system)', actor: 'Pathologist', id: 'PAD number', dur: 15, field: 'pat_sample_date',
     desc: 'The pathologist cuts tissue pieces, marks the tubes, and places them in the PreDDLung tube rack (−80 °C).' },
   { name: 'Register in Labware', short: 'Labware', phase: 'pathology', lane: 'path', loc: 'Pathology dept',
     system: 'Labware (LIMS)', actor: 'Pathology staff', id: 'Biobank tube barcode', dur: 10,
@@ -92,19 +92,19 @@ export const STAGES: Stage[] = [
     actor: 'Operator', id: '', dur: 60, field: 'qc_dna',
     desc: 'Concentration measured by Qubit (DNA/RNA) and Bradford/Qubit (protein); each fraction gets a QC Pass/Fail.',
     note: 'A failed RNA QC can trigger a repeat extraction (repeat_of), preserved in the graph.' },
-  { name: 'Platform analysis', short: 'Platforms', phase: 'analysis', loc: 'SciLifeLab',
-    system: 'Clinical Genomics · Genomics Express · Clinical Proteomics',
-    actor: 'Platform staff', id: 'SciLL running number', dur: 3960, durnote: '60–72 h',
+  { name: 'Analysis at the labs', short: 'Analysis labs', phase: 'analysis',
+    loc: 'SciLifeLab: Clinical Genomics, Genomics Express, Clinical Proteomics', system: '',
+    actor: 'Analysis lab staff', id: 'SciLL running number', dur: 3960, durnote: '60–72 h',
     field: 'send_dna',
     desc: 'DNA/RNA → Clinical Genomics / Genomics Express; Protein → Clinical Proteomics mass spec (TimsTOF / Astral).' },
   { name: 'Data analysis', short: 'Data analysis', phase: 'analysis', lane: 'mtb',
     loc: 'Bioinformatics / proteomics', system: '', actor: 'Analysts', id: '', dur: 2160,
     durnote: '24–48 h', field: 'datafrom_cg',
     desc: 'Sequencing and mass-spec data are processed and analysed.' },
-  { name: 'Molecular Tumor Board', short: 'Tumour board', event: true, phase: 'decision', lane: 'mtb', loc: 'MTB Portal',
-    system: 'MTBP', actor: 'Clinicians', id: '', dur: 0, durnote: 'meeting',
-    field: 'order_date',
-    desc: 'Results are reviewed in the Molecular Tumor Board Portal to guide the treatment decision — the end of the journey.' },
+  { name: 'Order in the MTB Portal', short: 'MTB Portal', event: true, phase: 'decision', lane: 'mtb',
+    loc: 'Molecular Tumor Board Portal', system: 'Molecular Tumor Board Portal', actor: 'Clinicians',
+    id: '', dur: 0, durnote: 'order', field: 'order_date',
+    desc: 'The case is ordered in the Molecular Tumor Board Portal, where clinicians review the combined results to guide the treatment decision. The order date is the last thing the study records, so this is the end of the journey.' },
 ];
 
 export function cumulative(): number[] {

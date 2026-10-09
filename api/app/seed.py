@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from . import config
 from .db import SessionLocal, engine
 from .models import (Activity, Aliquot, Base, Deviation, Edge, Facility, Identifier,
-                     Patient, PlatformRun, QCResult, Specimen, Staff, StorageLocation, Study)
+                     InformationSystem, Patient, PlatformRun, QCResult, Specimen, Staff, StorageLocation, Study)
 
 STAGE_INDEX = {stage: i for i, stage in enumerate(config.STAGES)}
 
@@ -83,6 +83,13 @@ def seed(session: Session, *, verbose: bool = True) -> dict[str, int]:
             row = Facility(name=node["label"], kind=node.get("kind"))
             session.add(row)
             facilities[node["id"]] = row
+
+    systems: dict[str, InformationSystem] = {}
+    for node in raw["nodes"]:
+        if node["type"] == "InformationSystem":
+            row = InformationSystem(name=node["label"], kind=node.get("kind"))
+            session.add(row)
+            systems[node["id"]] = row
 
     locations: dict[str, StorageLocation] = {}
     for node in raw["nodes"]:
@@ -159,12 +166,15 @@ def seed(session: Session, *, verbose: bool = True) -> dict[str, int]:
                          if e["type"] == "PERFORMED" and e["source"] in staff), None)
         facility = next((facilities[e["target"]] for e in out_edges.get(node["id"], [])
                          if e["type"] == "AT_FACILITY" and e["target"] in facilities), None)
+        system = next((systems[e["target"]] for e in out_edges.get(node["id"], [])
+                       if e["type"] == "RECORDED_IN" and e["target"] in systems), None)
         row = Activity(specimen_id=specimen.id if specimen else None,
                        kind=node.get("activity") or "activity", label=node["label"],
                        performed_on=_date(node.get("date")),
                        performed_at=node.get("time"),
                        staff_id=operator.id if operator else None,
-                       facility_id=facility.id if facility else None)
+                       facility_id=facility.id if facility else None,
+                       system_id=system.id if system else None)
         session.add(row)
         activities[node["id"]] = row
     session.flush()
@@ -257,8 +267,14 @@ def seed(session: Session, *, verbose: bool = True) -> dict[str, int]:
         node = src.get(edge["target"], {})
         owner = owner_of.get(edge["source"])
         if owner and node:
-            session.add(Identifier(system=node.get("system") or "?", value=node["label"],
-                                   owner_type=owner[0], owner_id=owner[1]))
+            def linked(kind: str) -> InformationSystem | None:
+                return next((systems[e["target"]] for e in out_edges.get(node["id"], [])
+                             if e["type"] == kind and e["target"] in systems), None)
+            issued_by, recorded_in = linked("ISSUED_BY"), linked("RECORDED_IN")
+            session.add(Identifier(scheme=node.get("scheme") or "?", value=node["label"],
+                                   owner_type=owner[0], owner_id=owner[1],
+                                   issued_by_id=issued_by.id if issued_by else None,
+                                   recorded_in_id=recorded_in.id if recorded_in else None))
 
     session.flush()
 
@@ -268,6 +284,8 @@ def seed(session: Session, *, verbose: bool = True) -> dict[str, int]:
         key_to_row[key] = ("staff", row.id)
     for key, row in facilities.items():
         key_to_row[key] = ("facility", row.id)
+    for key, row in systems.items():
+        key_to_row[key] = ("system", row.id)
     for key, row in locations.items():
         key_to_row[key] = ("storage", row.id)
     for key, row in activities.items():
@@ -288,6 +306,7 @@ def seed(session: Session, *, verbose: bool = True) -> dict[str, int]:
     counts = {
         "patients": len(patients), "specimens": len(specimens), "aliquots": len(aliquots),
         "activities": len(activities), "staff": len(staff), "facilities": len(facilities),
+        "systems": len(systems),
         "locations": len(locations), "edges": kept,
         "source_records": manifest.get("records"),
     }

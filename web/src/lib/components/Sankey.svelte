@@ -16,7 +16,7 @@
         column would misname two of them.
 
      Width is a count throughout, and the unit changes twice: specimens to the
-     split, aliquots across the tracks, specimens again at the tumour board.
+     split, aliquots across the tracks, specimens again at the tumour board portal.
      Both changes are labelled on the chart. */
   import type { Overview } from '$lib/types';
 
@@ -225,7 +225,7 @@
             fill={colour}>{count}</text>
     {/each}
 
-    {#each [['Data back', X.back, back, COL.back], ['Tumour board', X.mtb, mtb, COL.mtb]] as [label, x, count, colour]}
+    {#each [['Data back', X.back, back, COL.back], ['MTB Portal', X.mtb, mtb, COL.mtb]] as [label, x, count, colour]}
       <rect x={(x as number) - 4} y={yMid - h(count as number) / 2} width="8"
             height={Math.max(2, h(count as number))} rx="2" fill={colour as string} />
       <text x={x as number} y="24" text-anchor="middle" font-size="10.5" font-weight="700"

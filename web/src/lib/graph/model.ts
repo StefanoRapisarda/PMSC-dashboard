@@ -2,7 +2,7 @@
  * Adjacency and the provenance closures, carried over from v3.
  *
  * "Trace this" is not a filter — it is a walk. Selecting an aliquot should light
- * its specimen, that specimen's patient, its QC, its platform and its box, even
+ * its specimen, that specimen's patient, its QC, its lab and its box, even
  * when those layers are switched off. These closures are what make the graph
  * answer a provenance question instead of just colouring dots.
  */
@@ -67,7 +67,7 @@ export class GraphModel {
    * "this patient has something stuck" is the question a cohort raises, and an
    * average would hide it.
    *
-   * Platforms, boxes, operators and the board are not material and get no
+   * Labs, systems, boxes, operators and the board are not material and get no
    * outcome — calling them "on track" would be inventing a fact.
    */
   outcomeOf(node: GraphNode): string {
@@ -153,7 +153,7 @@ export class GraphModel {
       if (x.t === 'has_sample' && x.dir === 'in') set.add(x.o);
       if (x.t === 'identified_as' && x.dir === 'out') set.add(x.o);
       if (x.t === 'has_deviation' && x.dir === 'out') set.add(x.o);
-      if (x.t === 'has_mtb' && x.dir === 'out') set.add(x.o);
+      if (x.t === 'ordered_in' && x.dir === 'out') set.add(x.o);
       if (x.t === 'repeat_of') set.add(x.o);
       if (x.t === 'used' && x.dir === 'in') {
         set.add(x.o);
@@ -224,6 +224,20 @@ export class GraphModel {
       if (ids.has(edge.a)) out.add(edge.b);
       if (ids.has(edge.b)) out.add(edge.a);
     }
+    return this.withSources(out);
+  }
+
+  /**
+   * The labs and information systems behind a set of nodes: the lab a step was
+   * carried out at, the system that issues or records an identifier, and the
+   * portal the board's orders are recorded in. These links are followed outward
+   * only. A system is added, never the hundreds of other identifiers it issues.
+   */
+  withSources(ids: Set<number>): Set<number> {
+    const out = new Set(ids);
+    for (const edge of this.edges) {
+      if (SOURCE.has(edge.type) && ids.has(edge.a)) out.add(edge.b);
+    }
     return out;
   }
 
@@ -261,7 +275,7 @@ export class GraphModel {
   /**
    * The chain in the order it happened, for listing beside the graph.
    *
-   * Sorting by date alone does not work: an aliquot and a platform carry no date
+   * Sorting by date alone does not work: an aliquot and a lab carry no date
    * of their own, so they would all sort to the front. The order comes from
    * position along the chain — how many steps from the start — with dates
    * breaking ties between things at the same depth.
@@ -294,12 +308,17 @@ export class GraphModel {
       }
     }
 
-    const shown = ['patient', 'sample', 'activity', 'aliquot', 'platform', 'mtb'];
+    /* Only the analysis labs are steps of the journey. Pathology and the PMSC
+       lab are where the activities on the path happen, so the activities already
+       stand for them. Of the information systems, only the portal the journey
+       ends in is a step. */
+    const shown = ['patient', 'sample', 'activity', 'aliquot', 'lab', 'system'];
     return [...path]
       .map((id) => this.nodes[id])
-      .filter((n) => shown.includes(n.type))
+      .filter((n) => shown.includes(n.type) && (n.type !== 'lab' || n.analysis)
+                     && (n.type !== 'system' || n.endpoint))
       .map((n) => ({ node: n, when: n.date ?? n.collected ?? null }))
-      /* Stage first: the tumour board is the end of the story even though it
+      /* Stage first: the portal is the end of the story even though it
          hangs directly off the specimen, so depth alone would list it before the
          fractions. Dates order steps within a stage; depth breaks the rest. */
       .sort((a, b) => {
@@ -375,17 +394,20 @@ export class GraphModel {
  * carrying it, and joining a hidden node's neighbours across one of those would
  * invent a relationship ("these two aliquots shared a freezer box") that is not
  * provenance. It is also what causes the projection to explode: bridging every
- * pair of a hub's neighbours turns 3 platform nodes into ~14,000 edges, while
+ * pair of a hub's neighbours turns 3 analysis-lab nodes into ~14,000 edges, while
  * bridging along the spine turns them into none, because nothing flows past a
- * platform.
+ * lab.
  */
 export const SPINE: Record<string, boolean> = {
-  has_sample: false, generated: false, submitted_to: false, has_mtb: false,
+  has_sample: false, generated: false, submitted_to: false, ordered_in: false,
   used: true, derived_from: true,
 };
 
 /** Edges that describe a node rather than continue its chain. */
 export const ATTACHED = new Set(['identified_as', 'stored_at', 'performed', 'enrolled']);
+
+/** Edges from a thing to the lab or system behind it, followed outward only. */
+export const SOURCE = new Set(['performed_at', 'issued_by', 'recorded_in']);
 
 /** An edge standing in for one or more hidden steps of the chain. */
 export interface Bridge { a: number; b: number; via: string[]; }
@@ -481,6 +503,16 @@ export function project(model: GraphModel, facets: Facets): Projection {
         }
         for (const staff of model.adj[other.id] ?? []) {
           if (model.nodes[staff.o].type === 'operator') passesFacets.add(staff.o);
+          /* and the lab it was carried out at, for the same reason */
+          if (staff.t === 'performed_at') passesFacets.add(staff.o);
+        }
+      }
+      /* An identifier brings the system that issues or records it. That system
+         is two hops from the material, so the one-hop rule above would never
+         reach it. */
+      if (other.type === 'identifier') {
+        for (const sys of model.adj[other.id] ?? []) {
+          if (sys.t === 'issued_by' || sys.t === 'recorded_in') passesFacets.add(sys.o);
         }
       }
       if (other.type === 'storage') {
@@ -497,7 +529,7 @@ export function project(model: GraphModel, facets: Facets): Projection {
     if (facets.ntype[model.nodes[id].type]) visible.add(id);
   }
 
-  /* Bridge BEFORE pruning. A platform reached only through a hidden aliquot
+  /* Bridge BEFORE pruning. A lab reached only through a hidden aliquot
      still belongs on screen — the bridge is what connects it, so deciding it is
      orphaned before the bridges exist throws away the very thing that keeps the
      chain intact. */
@@ -505,10 +537,16 @@ export function project(model: GraphModel, facets: Facets): Projection {
 
   /* now anything with nothing left to attach to is noise rather than
      information: a freezer with no aliquots in view, a deviation whose specimen
-     is hidden. Things ON the spine stay, because a bridge may reach them. */
+     is hidden. Things ON the spine stay, because a bridge may reach them.
+
+     Labs and information systems are exempt. There are five of each, they are
+     named reference points rather than clutter, and a layer that is switched on
+     should show all of them: hiding REDCap because no identifier is on screen
+     left the Information system group holding only the portal, under a legend
+     that said five. */
   const bridged = new Set<number>();
   bridges.forEach((b) => { bridged.add(b.a); bridged.add(b.b); });
-  const attachments = ['platform', 'mtb', 'operator', 'storage', 'identifier',
+  const attachments = ['operator', 'storage', 'identifier',
                        'qc', 'deviation'];
   const pruned = new Map<string, number[]>();
   for (const id of [...visible]) {

@@ -7,30 +7,33 @@
  */
 export type NodeType =
   | 'study' | 'patient' | 'identifier' | 'sample' | 'activity' | 'operator'
-  | 'aliquot' | 'qc' | 'deviation' | 'platform' | 'storage' | 'mtb';
+  | 'aliquot' | 'qc' | 'deviation' | 'lab' | 'system' | 'storage';
 
-/* One departure from v3. Its platform colour (#4cc9f0) sat only 20 degrees of
-   hue from the sample teal, and on the dark canvas, at dot size and with the
-   depth fading applied, the two could not be told apart. Platforms are now a
-   deeper blue, which keeps them in the same family while reading as different. */
+/* One departure from v3. Its colour for labs (#4cc9f0, when v3 still called
+   them platforms) sat only 20 degrees of hue from the sample teal, and on the
+   dark canvas, at dot size and with the depth fading applied, the two could not
+   be told apart. Labs are now a deeper blue, which keeps them in the same family
+   while reading as different. Information systems are not in v3 at all; they
+   take a green that no other type is near. */
 export const COLORS: Record<NodeType, string> = {
   study: '#b15dff', patient: '#ff6b9d', identifier: '#ff9f1c', sample: '#2ec4b6',
   activity: '#c98a5e', operator: '#b0bccb', aliquot: '#e9c46a', qc: '#7c6df2',
-  deviation: '#e76f51', platform: '#3a86ff', storage: '#94a7bd', mtb: '#b15dff',
+  deviation: '#e76f51', lab: '#3a86ff', system: '#7cb518', storage: '#94a7bd',
 };
 
 /** v3's radii, doubled for Cytoscape which sizes by diameter. */
 export const RADIUS: Record<NodeType, number> = {
   study: 13, patient: 9, identifier: 4, sample: 8, activity: 6, operator: 6.5,
-  aliquot: 6, qc: 4.5, deviation: 5.5, platform: 11, storage: 7, mtb: 11,
+  aliquot: 6, qc: 4.5, deviation: 5.5, lab: 11, system: 9, storage: 7,
 };
 
 export const ONTOLOGY: Record<NodeType, string> = {
   patient: 'OMOP Person', sample: 'CKG Biological_sample · MIABIS / SPREC',
   aliquot: 'CKG Analytical_sample', activity: 'PROV-O Activity',
   operator: 'PROV-O Agent · HSA-ID', identifier: 'Persistent identifier (PID)',
-  platform: 'PROV-O Agent · facility', qc: 'QCResult node',
-  deviation: 'Deviation node', storage: 'StorageLocation', mtb: 'MTB case',
+  lab: 'PROV-O Agent · Organization', system: 'PROV-O SoftwareAgent',
+  qc: 'QCResult node',
+  deviation: 'Deviation node', storage: 'StorageLocation',
   study: 'Study',
 };
 
@@ -45,7 +48,7 @@ export const ONTOLOGY: Record<NodeType, string> = {
  */
 export const DESCRIPTION: Record<NodeType, string> = {
   patient: 'A person enrolled in the study.',
-  identifier: 'A name this thing is known by in one system. It gets a new one at '
+  identifier: 'A name this thing is known by, such as a PAD number. It gets a new one at '
             + 'each handover, and joining those names back together is the point of WP2.',
   sample: 'The material taken from the patient — a piece of tumour, or a blood draw.',
   activity: 'A step someone carried out: cutting, grinding, extracting, running a machine.',
@@ -53,10 +56,14 @@ export const DESCRIPTION: Record<NodeType, string> = {
   qc: 'The pass or fail decision on one fraction.',
   deviation: 'Something recorded as having gone wrong: timing, temperature, handling '
            + 'or labelling.',
-  platform: 'The lab that ran the analysis.',
+  lab: 'A place where work is done on the material. That is pathology, the PMSC lab, '
+     + 'or one of the three analysis labs at SciLifeLab.',
+  system: 'Software where something about a patient or a sample is registered, such as '
+        + 'REDCap. It issues or records identifiers, but does no work on the material. '
+        + 'The journey ends in one of them, when a case is ordered in the Molecular Tumor '
+        + 'Board Portal.',
   storage: 'A freezer, rack or box where material sits.',
   operator: 'The person who carried out a step, identified by their staff ID.',
-  mtb: 'The tumour board meeting where the results are discussed.',
   study: 'The study everything belongs to.',
 };
 
@@ -64,8 +71,8 @@ export const DESCRIPTION: Record<NodeType, string> = {
    anything downstream to traverse to. Activities are drawn, because which steps
    were run on a specimen — and by whom — is a question about the material. */
 export const TYPE_ORDER: NodeType[] = [
-  'patient', 'identifier', 'sample', 'activity', 'aliquot', 'platform',
-  'storage', 'operator', 'mtb',
+  'patient', 'identifier', 'system', 'sample', 'activity', 'aliquot', 'lab',
+  'storage', 'operator',
 ];
 
 /** Processing steps, in the order they happen, with names a lab would use. */
@@ -84,7 +91,7 @@ export const ACTIVITY_ORDER = ['collection', 'pathology', 'sectioning', 'cryopre
 export const TYPE_LABEL: Record<NodeType, string> = {
   patient: 'Patient', identifier: 'Identifier (ID chain)', sample: 'Sample',
   activity: 'Activity', aliquot: 'Aliquot', qc: 'QC result', deviation: 'Deviation',
-  platform: 'Platform', storage: 'Storage', operator: 'Operator', mtb: 'MTB case',
+  lab: 'Lab', system: 'Information system', storage: 'Storage', operator: 'Operator',
   study: 'Study',
 };
 
@@ -99,7 +106,7 @@ export const TYPE_LABEL: Record<NodeType, string> = {
  *   TIGHT  — "is part of / is a fact about this object". Glues one specimen's
  *            own things onto it, so a sample family collapses into a small ball.
  *   FAMILY — the family root and its siblings: looser, still one clump.
- *   LOOSE  — shared context (platform, operator, freezer box). Long and weak, so
+ *   LOOSE  — shared context (lab, system, operator, freezer box). Long and weak, so
  *            a hub does not drag families around; because it has many weak
  *            springs it settles between the families it serves.
  *
@@ -121,9 +128,12 @@ export const SPRING: Record<string, { L: number; k: number }> = {
   contains: { L: 70, k: 0.035 },
   /* LOOSE */
   stored_at: { L: 165, k: 0.012 },
-  has_mtb: { L: 180, k: 0.012 },
+  ordered_in: { L: 180, k: 0.012 },
   submitted_to: { L: 185, k: 0.012 },
   performed: { L: 190, k: 0.012 },
+  performed_at: { L: 190, k: 0.012 },
+  issued_by: { L: 175, k: 0.012 },
+  recorded_in: { L: 175, k: 0.012 },
 };
 export const SPRING_DEFAULT = { L: 70, k: 0.030 };
 
@@ -165,10 +175,16 @@ export const RELATION: Record<string, Relation> = {
     says: (a, b) => `${a} is stored in ${b}.` },
   contains: { name: 'Contains', standard: null,
     says: (a, b) => `${a} holds ${b}.` },
+  performed_at: { name: 'Carried out at', standard: 'PROV-O wasAssociatedWith',
+    says: (a, b) => `The step ${a} was carried out at ${b}.` },
+  issued_by: { name: 'Issued by', standard: null,
+    says: (a, b) => `The identifier ${a} is issued by ${b}.` },
+  recorded_in: { name: 'Recorded in', standard: null,
+    says: (a, b) => `${a} is recorded in ${b}.` },
   submitted_to: { name: 'Sent for analysis', standard: null,
     says: (a, b) => `${a} was sent to ${b} for analysis.` },
-  has_mtb: { name: 'Reached the tumour board', standard: null,
-    says: (a, b) => `The results from ${a} reached ${b}.` },
+  ordered_in: { name: 'Ordered in', standard: null,
+    says: (a, b) => `A case for ${a} was ordered in ${b}, which is where the journey ends.` },
   enrolled: { name: 'Enrolled by', standard: null,
     says: (a, b) => `${a} enrolled the patient ${b} in the study.` },
   repeat_of: { name: 'Repeat collection', standard: null,

@@ -41,7 +41,7 @@
     { n: `${data.kpis.qc_pass_rate ?? '—'}<small>%</small>`, l: 'QC pass rate',
       tip: 'Share of resolved aliquots that passed QC; pending aliquots are excluded.' },
     { n: `${data.kpis.reached_data_back_pct ?? '—'}<small>%</small>`, l: 'Reached data back',
-      tip: 'Samples where at least one aliquot got results back from a platform.' },
+      tip: 'Samples where at least one aliquot got results back from an analysis lab.' },
     { n: String(data.kpis.stalled), l: 'Stalled samples',
       tip: `No next step for ${data.kpis.stall_threshold_days}+ days.` },
   ] : []);
@@ -108,7 +108,7 @@
                "median time to molecular tumour board" as a feasibility result -->
           <h3>Time to tumour board
             <span style="font-weight:400;color:var(--muted);font-size:12px">
-              · surgery → molecular tumour board, by phase</span></h3>
+              · surgery → order in the Molecular Tumor Board Portal, by phase</span></h3>
           <Turnaround turnaround={data.turnaround} />
         </div>
       </div>

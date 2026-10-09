@@ -1,6 +1,7 @@
 """Stage two: normalized tables become a labelled, directed provenance graph.
 
-Twelve node types, per docs/design-decisions.md section 3. The promotion rule is
+Thirteen node types: the twelve in docs/design-decisions.md section 3, plus
+InformationSystem. The promotion rule is
 that a field becomes a node when it is shared, carries its own attributes, or is
 traversed through; everything else stays a property.
 
@@ -13,18 +14,47 @@ STUDY = "PreDDLung"
 
 NODE_TYPES = ["Study", "Patient", "Specimen", "AnalyticalSample", "QCResult",
               "Deviation", "Activity", "PlatformRun", "Facility", "Staff",
-              "StorageLocation", "Identifier"]
+              "StorageLocation", "Identifier", "InformationSystem"]
 
 STAGES = ["enrolled", "collected", "pathology", "pmsc_prep", "allprep",
           "qc", "submitted", "data_back", "mtb"]
 
+# The labs, meaning the places where work is done on the material. The tumour
+# board portal used to be listed here too, but it is software where an order is
+# recorded, not a place where anything is done to a sample, so it moved to
+# INFORMATION_SYSTEMS below.
 FACILITIES = {
-    "pathology": ("Pathology, Karolinska", "hospital pathology"),
-    "pmsc": ("PM Sample Central", "sample central"),
-    "cg": ("Clinical Genomics, SciLifeLab", "sequencing platform"),
-    "ge": ("Genomics Express", "RNA sequencing service"),
-    "cp": ("Clinical Proteomics, SciLifeLab", "mass spectrometry platform"),
-    "mtb": ("Molecular Tumor Board Portal", "tumour board"),
+    "pathology": ("Pathology, Karolinska", "hospital pathology lab"),
+    "pmsc": ("PM Sample Central", "sample processing lab"),
+    "cg": ("Clinical Genomics, SciLifeLab", "sequencing lab"),
+    "ge": ("Genomics Express", "RNA sequencing lab"),
+    "cp": ("Clinical Proteomics, SciLifeLab", "mass spectrometry lab"),
+}
+
+# Software where something about the patient or the sample is registered. None
+# of these does any work on the material. Orbit, the surgery scheduler, is left
+# out because nothing in the export is recorded there.
+INFORMATION_SYSTEMS = {
+    "redcap": ("REDCap", "electronic case report form"),
+    "takecare": ("TakeCare", "electronic health record"),
+    "sympathy": ("Sympathy", "pathology lab system"),
+    "labware": ("Labware", "biobank lab system"),
+    "mtbp": ("Molecular Tumor Board Portal", "tumour board portal"),
+}
+
+# Which system issues each kind of identifier, and which other systems record it.
+# The sources are docs/domain-brief.md (the ID chain and the systems landscape)
+# and the PreDDLung workflow. The PMSC sample and aliquot IDs are missing on
+# purpose: no source names the system that issues them, and a guess written here
+# would be shown in the graph as a fact.
+ISSUED_BY = {
+    "eCRF study ID": "redcap",
+    "PAD (pathology)": "sympathy",
+    "biobank tube barcode": "labware",
+}
+# Consent forms are registered in TakeCare against the study ID.
+RECORDED_IN = {
+    "eCRF study ID": "takecare",
 }
 
 DEVIATION_FIELDS = {
@@ -61,14 +91,21 @@ class GraphBuilder:
         self.edges.append({"source": src, "target": dst, "type": etype,
                            **{k: v for k, v in props.items() if v is not None}})
 
-    def identifier(self, value, system, owner):
+    def identifier(self, value, scheme, owner):
         """Every cross-system ID becomes a node. Reconciling this chain is the
-        point of the graph, so the IDs are objects, not string attributes."""
+        point of the graph, so the IDs are objects, not string attributes.
+
+        `scheme` is the kind of identifier, such as a PAD number. The software
+        that issues it, where a source names one, is a separate node."""
         if not value:
             return None
-        nid = f"id:{system}:{value}"
-        self.node(nid, "Identifier", value, system=system)
+        nid = f"id:{scheme}:{value}"
+        self.node(nid, "Identifier", value, scheme=scheme)
         self.edge(owner, nid, "IDENTIFIED_AS")
+        if scheme in ISSUED_BY:
+            self.edge(nid, self.information_system(ISSUED_BY[scheme]), "ISSUED_BY")
+        if scheme in RECORDED_IN:
+            self.edge(nid, self.information_system(RECORDED_IN[scheme]), "RECORDED_IN")
         return nid
 
     def staff(self, hsa, activity, role):
@@ -82,6 +119,10 @@ class GraphBuilder:
         name, kind = FACILITIES[key]
         return self.node(f"facility:{key}", "Facility", name, kind=kind)
 
+    def information_system(self, key):
+        name, kind = INFORMATION_SYSTEMS[key]
+        return self.node(f"system:{key}", "InformationSystem", name, kind=kind)
+
     def storage(self, freezer, box, position, owner, since=None):
         if not freezer:
             return None
@@ -92,7 +133,7 @@ class GraphBuilder:
         return nid
 
     def activity(self, key, record_id, label, on, facility_key=None, used=None,
-                 generated=None, at=None):
+                 generated=None, at=None, system_key=None):
         """One step in the chain.
 
         `at` is the clock time the export recorded for the step, where it
@@ -107,6 +148,8 @@ class GraphBuilder:
                         activity=key, date=on, time=at)
         if facility_key:
             self.edge(nid, self.facility(facility_key), "AT_FACILITY")
+        if system_key:
+            self.edge(nid, self.information_system(system_key), "RECORDED_IN")
         for u in (used or []):
             self.edge(nid, u, "USED")
         for g in (generated or []):
@@ -282,7 +325,7 @@ class GraphBuilder:
         # --- tumour board
         if s.get("order_date"):
             self.activity("mtb", rid, "Tumour board order", s["order_date"],
-                          "mtb", used=[spec])
+                          used=[spec], system_key="mtbp")
 
         # --- repeat links: the failing record points at the record that re-ran it
         for field in ("dna_repeat", "rna_repeat"):

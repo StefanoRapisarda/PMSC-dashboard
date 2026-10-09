@@ -2,7 +2,7 @@
 
 export type NodeType =
   | 'study' | 'patient' | 'identifier' | 'sample' | 'activity' | 'operator'
-  | 'aliquot' | 'qc' | 'deviation' | 'platform' | 'storage' | 'mtb';
+  | 'aliquot' | 'qc' | 'deviation' | 'lab' | 'system' | 'storage';
 
 export interface GraphNode {
   id: number;
@@ -40,9 +40,19 @@ export interface GraphNode {
   buffer?: string | null;
   sent_on?: string | null;
   returned_on?: string | null;
+  /** an identifier's kind, such as a PAD number */
   scheme?: string;
-  system?: string;
+  /** the information system that issues an identifier, where a source names one */
+  issued_by?: string | null;
   value?: string;
+  /** a lab that analyses the extracted fractions, as opposed to an in-house one */
+  analysis?: boolean;
+  /** the information system the journey ends in: the tumour board portal */
+  endpoint?: boolean;
+  /** a short name for a row or a label, where the full one is long */
+  short?: string | null;
+  /** when a specimen's case was ordered in the tumour board portal */
+  ordered_on?: string | null;
   outcome?: string;
   devtype?: string;
   note?: string | null;
@@ -71,8 +81,10 @@ export interface GraphEdge { a: number; b: number; type: string; }
 export interface GraphPayload {
   nodes: GraphNode[];
   edges: GraphEdge[];
-  platforms: Record<string, number>;
-  mtb: number;
+  labs: Record<string, number>;
+  systems: number[];
+  /** the Molecular Tumor Board Portal, where the journey ends */
+  portal: number | null;
   sample_types: string[];
   activity_kinds: string[];
   counts: { patients: number; specimens: number; nodes: number; edges: number };
@@ -92,12 +104,12 @@ export interface Meta {
 export type Phase = 'pre_analytical' | 'analytical' | 'post_analytical';
 
 export interface TurnaroundSegment {
-  key: string; label: string; owner: 'lab' | 'platform'; phase: Phase;
+  key: string; label: string; owner: 'in_house' | 'analysis_lab'; phase: Phase;
   detail: string; parallel?: boolean;
   n: number; median_days: number | null; p90_days: number | null;
 }
 
-export interface PlatformWait {
+export interface AnalysisLabWait {
   name: string; n: number;
   median_days: number | null; p90_days: number | null; note?: string;
 }
@@ -105,10 +117,10 @@ export interface PlatformWait {
 export interface Turnaround {
   end_to_end: { n: number; median_days: number | null; p90_days: number | null };
   segments: TurnaroundSegment[];
-  platforms: PlatformWait[];
+  analysis_labs: AnalysisLabWait[];
   phases: { key: Phase; label: string; where: string; days: number }[];
   in_house_days: number;
-  platform_days: number;
+  analysis_lab_days: number;
   note: string;
 }
 
@@ -154,13 +166,14 @@ export interface SpecimenDetail {
   is_repeat: boolean;
   patient: { label: string; sex: string; age: number } | null;
   storage: string | null;
-  id_chain: { role: string; system: string; value: string | null }[];
+  id_chain: { role: string; scheme: string; value: string | null;
+              issued_by: string | null }[];
   steps: { kind: string; label: string; date: string | null;
            operator: string | null; facility: string | null }[];
   fractions: { label: string; molecule: string; qc: string | null;
                total: number | null; concentration: number | null;
                elution_ul: number | null; buffer: string | null;
-               platform: string | null; sent_on: string | null;
+               lab: string | null; sent_on: string | null;
                returned_on: string | null }[];
   deviations: { type: string; note: string | null }[];
 }

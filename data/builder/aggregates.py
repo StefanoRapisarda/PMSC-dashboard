@@ -189,8 +189,8 @@ def _qc_by_type(collected):
 
 
 def _turnaround(collected):
-    """Hands-on time and platform waiting reported separately: a single long bar
-    would read as inefficiency when most of it is a platform queue."""
+    """Hands-on time and analysis-lab waiting reported separately: a single long
+    bar would read as inefficiency when most of it is an analysis-lab queue."""
     hands_on, waiting = defaultdict(list), defaultdict(list)
 
     def days(a, b):

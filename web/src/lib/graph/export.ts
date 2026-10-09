@@ -103,7 +103,7 @@ export async function detailedView(cy: Core, overlay: HTMLCanvasElement | null,
  *
  * A dialog is a fixed-size window onto content that scrolls inside it, so
  * photographing it as it stands gives you the window rather than the content:
- * the first export of the timeline lost the platform cards off the right and the
+ * the first export of the timeline lost the lab cards off the right and the
  * footnote off the bottom. What is captured instead is a copy of the element,
  * parked off-screen with every scroller opened out, so the whole thing is laid
  * out at once. The copy means nothing the reader is looking at moves.

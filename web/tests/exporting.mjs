@@ -129,7 +129,7 @@ await settle(1000);
 
 /* What the picture must contain: the dialog is a fixed-size window onto content
    that scrolls inside it, so the first version of this photographed the window
-   and lost the platform cards off the right. */
+   and lost the lab cards off the right. */
 const dialog = await page.evaluate(() => {
   const w = document.querySelector('.win');
   const scroll = w.querySelector('.scroll');

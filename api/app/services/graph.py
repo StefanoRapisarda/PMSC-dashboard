@@ -13,18 +13,28 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import (Activity, Aliquot, Deviation, Facility, Identifier, Patient,
-                      PlatformRun, QCResult, Specimen, Staff, StorageLocation)
+from ..models import (Activity, Aliquot, Deviation, Facility, Identifier,
+                      InformationSystem, Patient, PlatformRun, QCResult, Specimen, Staff,
+                      StorageLocation)
 
-PLATFORM_KEY = {
+# Every lab, keyed by a short code. The first two do the in-house work, and the
+# last three are the analysis labs that receive the extracted fractions.
+LAB_KEY = {
+    "Pathology, Karolinska": "PAT",
+    "PM Sample Central": "PMSC",
     "Clinical Genomics, SciLifeLab": "CG",
     "Genomics Express": "GX",
     "Clinical Proteomics, SciLifeLab": "MS",
 }
+ANALYSIS_LABS = {"CG", "GX", "MS"}
+
+# the kind the data builder gives the Molecular Tumor Board Portal
+PORTAL_KIND = "tumour board portal"
 
 MOLECULE_ORDER = {"DNA": 0, "RNA": 1, "Protein": 2, "Peptide": 3}
 
-# v3's stage ladder: 4 = through PM-SC prep, 6 = submitted, 7 = analysed, 8 = MTB
+# v3's stage ladder: 4 = through PM-SC prep, 6 = submitted, 7 = analysed,
+# 8 = ordered in the Molecular Tumor Board Portal, the end of the journey
 STAGE_NUMBER = {"enrolled": 1, "collected": 2, "pathology": 3, "pmsc_prep": 4,
                 "allprep": 5, "qc": 5, "submitted": 6, "data_back": 7, "mtb": 8}
 
@@ -67,16 +77,31 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
         location_box[row.id] = boxes[box_name]
 
     # -------------------------------------------------------------- agents
-    platforms: dict[str, int] = {}
-    mtb_index: int | None = None
+    labs: dict[str, int] = {}
+    lab_of_facility: dict[int, int] = {}
     for row in session.scalars(select(Facility).order_by(Facility.id)).all():
-        key = PLATFORM_KEY.get(row.name)
+        key = LAB_KEY.get(row.name)
         if key:
-            platforms[key] = g.add("platform", row.name, facility_id=row.id)
-        elif "Tumor Board" in row.name:
-            mtb_index = g.add("mtb", "MTB board")
-    if mtb_index is None:
-        mtb_index = g.add("mtb", "MTB board")
+            labs[key] = g.add("lab", row.name, kind=row.kind, facility_id=row.id,
+                              analysis=key in ANALYSIS_LABS)
+            lab_of_facility[row.id] = labs[key]
+
+    # Software where things are registered. A system does no work on the
+    # material, so it is its own type rather than another kind of lab.
+    #
+    # One of them is the end of the journey. A case is ordered in the Molecular
+    # Tumor Board Portal, and that order date is the last thing the export
+    # records; the board's meeting itself is never recorded. So the portal is the
+    # endpoint, and there is no separate node for the board.
+    systems: dict[int, int] = {}
+    portal_index: int | None = None
+    for row in session.scalars(select(InformationSystem).order_by(InformationSystem.id)).all():
+        endpoint = row.kind == PORTAL_KIND
+        systems[row.id] = g.add("system", row.name, kind=row.kind, system_id=row.id,
+                                endpoint=endpoint, short="MTB Portal" if endpoint else None)
+        if endpoint:
+            portal_index = systems[row.id]
+    system_name = {row.id: row.name for row in session.scalars(select(InformationSystem)).all()}
 
     operators: dict[int, int] = {}
     for row in session.scalars(select(Staff).order_by(Staff.id)).all():
@@ -100,9 +125,14 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
         precisely the join WP2 exists to reconstruct.
         """
         for identifier in identifiers.get((owner_type, owner_id), []):
-            index = g.add("identifier", identifier.system, scheme=identifier.system,
-                          system=identifier.system, value=identifier.value)
+            index = g.add("identifier", identifier.scheme, scheme=identifier.scheme,
+                          value=identifier.value,
+                          issued_by=system_name.get(identifier.issued_by_id))
             g.link(node_index, index, "identified_as")
+            if identifier.issued_by_id in systems:
+                g.link(index, systems[identifier.issued_by_id], "issued_by")
+            if identifier.recorded_in_id in systems:
+                g.link(index, systems[identifier.recorded_in_id], "recorded_in")
 
     patient_index: dict[int, int] = {}
     for row in patients:
@@ -141,9 +171,6 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
             select(PlatformRun).where(PlatformRun.aliquot_id.in_(aliquot_ids))).all():
         runs.setdefault(row.aliquot_id, []).append(row)
 
-    facility_key = {row.id: PLATFORM_KEY.get(row.name)
-                    for row in session.scalars(select(Facility)).all()}
-
     specimen_index: dict[int, int] = {}
     aliquot_index: dict[int, int] = {}
 
@@ -176,11 +203,14 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
         attach_identifiers("specimen", spec.id, s_index)
 
         # Each processing step is a node, so you can see what was actually run on
-        # a specimen and by whom. The tumour board keeps its own node, so its
-        # activity is skipped rather than drawn twice.
+        # a specimen and by whom. The order in the tumour board portal is not
+        # drawn as a step: it is the specimen's link to the portal, and its date
+        # is kept on the specimen as `ordered_on`.
         activity_index: dict[int, int] = {}
         for activity in activities.get(spec.id, []):
             if activity.kind == "mtb":
+                if activity.performed_on:
+                    g.nodes[s_index]["ordered_on"] = activity.performed_on.isoformat()
                 continue
             a_index = g.add(
                 "activity", activity.label, kind=activity.kind,
@@ -190,6 +220,8 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
             g.link(a_index, s_index, "used")
             if activity.staff_id in operators:
                 g.link(operators[activity.staff_id], a_index, "performed")
+            if activity.facility_id in lab_of_facility:
+                g.link(a_index, lab_of_facility[activity.facility_id], "performed_at")
 
         # which step produced which fraction
         by_kind = {a.kind: activity_index[a.id] for a in activities.get(spec.id, [])
@@ -222,17 +254,16 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
                 g.link(a_index, location_box[aliquot.storage_id], "stored_at")
 
             for run in runs.get(aliquot.id, []):
-                key = facility_key.get(run.facility_id)
-                if key and key in platforms:
-                    g.link(a_index, platforms[key], "submitted_to")
+                if run.facility_id in lab_of_facility:
+                    g.link(a_index, lab_of_facility[run.facility_id], "submitted_to")
                 g.nodes[a_index]["sent_on"] = run.sent_on.isoformat() if run.sent_on else None
                 g.nodes[a_index]["returned_on"] = run.returned_on.isoformat() if run.returned_on else None
 
         g.nodes[s_index]["_alisIdx"] = alis
         g.nodes[s_index]["_actIdx"] = next(iter(activity_index.values()), None)
 
-        if STAGE_NUMBER.get(spec.stage_reached, 1) >= 8:
-            g.link(s_index, mtb_index, "has_mtb")
+        if STAGE_NUMBER.get(spec.stage_reached, 1) >= 8 and portal_index is not None:
+            g.link(s_index, portal_index, "ordered_in")
 
     # a retry is its own record, so the repeat relation is specimen to specimen
     for spec in specimens:
@@ -247,7 +278,7 @@ def build(session: Session, *, patient_limit: int | None = None) -> dict[str, An
     return {
         "nodes": g.nodes, "edges": g.edges,
         "activity_kinds": activity_kinds,
-        "platforms": platforms, "mtb": mtb_index,
+        "labs": labs, "systems": list(systems.values()), "portal": portal_index,
         "sample_types": sample_types,
         "counts": {"patients": len(patients), "specimens": len(specimens),
                    "nodes": len(g.nodes), "edges": len(g.edges)},
@@ -264,14 +295,19 @@ def specimen_detail(session: Session, specimen_id: int) -> dict | None:
     patient = session.get(Patient, spec.patient_id)
 
     chain: list[dict] = []
+    names = {row.id: row.name for row in session.scalars(select(InformationSystem)).all()}
+
+    def link(role: str, identifier: Identifier) -> dict:
+        return {"role": role, "scheme": identifier.scheme, "value": identifier.value,
+                "issued_by": names.get(identifier.issued_by_id)}
+
     if patient:
         for identifier in session.scalars(select(Identifier).where(
                 Identifier.owner_type == "patient", Identifier.owner_id == patient.id)).all():
-            chain.append({"role": "Patient", "system": identifier.system,
-                          "value": identifier.value})
+            chain.append(link("Patient", identifier))
     for identifier in session.scalars(select(Identifier).where(
             Identifier.owner_type == "specimen", Identifier.owner_id == spec.id)).all():
-        chain.append({"role": "Specimen", "system": identifier.system, "value": identifier.value})
+        chain.append(link("Specimen", identifier))
 
     aliquot_rows = session.scalars(
         select(Aliquot).where(Aliquot.specimen_id == spec.id)).all()
@@ -279,11 +315,10 @@ def specimen_detail(session: Session, specimen_id: int) -> dict | None:
         found = session.scalars(select(Identifier).where(
             Identifier.owner_type == "aliquot", Identifier.owner_id == aliquot.id)).all()
         for identifier in found:
-            chain.append({"role": f"Aliquot · {aliquot.molecule}",
-                          "system": identifier.system, "value": identifier.value})
+            chain.append(link(f"Aliquot · {aliquot.molecule}", identifier))
         if not found:
             chain.append({"role": f"Aliquot · {aliquot.molecule}",
-                          "system": "not captured", "value": None})
+                          "scheme": "not captured", "value": None, "issued_by": None})
 
     steps = []
     for activity in sorted(session.scalars(
@@ -306,7 +341,7 @@ def specimen_detail(session: Session, specimen_id: int) -> dict | None:
             "label": aliquot.label, "molecule": aliquot.molecule, "qc": aliquot.qc_outcome,
             "total": aliquot.total, "concentration": aliquot.concentration,
             "elution_ul": aliquot.elution_ul, "buffer": aliquot.buffer,
-            "platform": facility.name if facility else None,
+            "lab": facility.name if facility else None,
             "sent_on": run.sent_on.isoformat() if run and run.sent_on else None,
             "returned_on": run.returned_on.isoformat() if run and run.returned_on else None,
         })
@@ -344,6 +379,6 @@ def search(session: Session, query: str, limit: int = 15) -> list[dict]:
             first = session.scalars(select(Specimen)
                                     .where(Specimen.patient_id == identifier.owner_id)).first()
             specimen_id = first.id if first else None
-        hits.append({"value": identifier.value, "system": identifier.system,
+        hits.append({"value": identifier.value, "scheme": identifier.scheme,
                      "owner_type": identifier.owner_type, "specimen_id": specimen_id})
     return hits

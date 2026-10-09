@@ -14,8 +14,8 @@
 
    Bridges follow the provenance spine only. Joining a hidden node's neighbours
    in general invents relationships that are not provenance, and explodes: three
-   platform nodes would become ~14,000 edges that way, versus none along the
-   spine, because nothing flows past a platform. */
+   lab nodes would become ~14,000 edges that way, versus none along the
+   spine, because nothing flows past a lab. */
 import puppeteer from 'puppeteer-core';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -61,6 +61,10 @@ const state = () => page.evaluate(() => {
     bridges: cy.edges('.bridge').length,
     isolatedTypes: [...new Set(vis.filter((n) =>
       n.connectedEdges().not('.hidden').length === 0).map((n) => n.data('type')))],
+    /* the analysis labs specifically: Pathology and the PMSC lab are shown with
+       no lines when the activity layer is off, which is intended */
+    isolatedAnalysisLabs: vis.filter((n) => n.data('type') === 'lab' && n.data('analysis')
+      && n.connectedEdges().not('.hidden').length === 0).length,
     byType,
   };
 });
@@ -151,10 +155,9 @@ await settle(2200);
 const hidden = await state();
 check('hiding a level of the chain creates bridges',
       hidden.bridges > 0, `${hidden.bridges} bridges`);
-check('the platforms stay connected through the bridge',
-      hidden.byType.platform === base.byType.platform
-      && !hidden.isolatedTypes.includes('platform'),
-      `platforms: ${hidden.byType.platform}, isolated: ${hidden.isolatedTypes.join(',') || 'none'}`);
+check('the analysis labs stay connected through the bridge',
+      hidden.byType.lab === base.byType.lab && hidden.isolatedAnalysisLabs === 0,
+      `labs: ${hidden.byType.lab}, isolated analysis labs: ${hidden.isolatedAnalysisLabs}`);
 
 const via = await page.evaluate(() =>
   [...new Set(window.__cy.edges('.bridge').map((e) => e.data('via')))]);
@@ -220,8 +223,8 @@ for (const type of ['patient', 'sample', 'aliquot']) {
   check(`a ${type}'s code is marked as an ID`, t.tag === 'ID', `${t.tag} ${t.name}`);
 }
 /* a facility has a name, not a code — tagging it would be a lie */
-const plat = await titleOf('platform');
-check('a platform name is not tagged as an ID', plat.tag === null, `${plat.tag} ${plat.name}`);
+const plat = await titleOf('lab');
+check('a lab name is not tagged as an ID', plat.tag === null, `${plat.tag} ${plat.name}`);
 
 /* rotating must not empty the picture: the edges are the provenance */
 const beforeSpin = await page.evaluate(() => window.__cy.edges().not('.hidden').length);
@@ -599,12 +602,13 @@ const lineage = await page.evaluate(() => {
 check('tracing a path lights one chain and dims the rest',
       lineage.bright > 3 && lineage.bright < lineage.visible / 4,
       `${lineage.bright} of ${lineage.visible}`);
-check('the path runs from the patient through to the tumour board',
-      lineage.types.includes('patient') && lineage.types.includes('mtb'), lineage.types.join(','));
+check('the path runs from the patient through to the tumour board portal',
+      lineage.types.includes('patient') && lineage.types.includes('system'), lineage.types.join(','));
 /* dates alone put the undated aliquots first and the tumour board too early:
    the order has to follow the pipeline, not the calendar */
 check('the panel lists the path in the order it happened',
-      /^PDL-/.test(lineage.steps[0]) && /MTB/.test(lineage.steps[lineage.steps.length - 1]),
+      /^PDL-/.test(lineage.steps[0])
+        && /Tumor Board Portal/.test(lineage.steps[lineage.steps.length - 1]),
       `${lineage.steps[0]} … ${lineage.steps[lineage.steps.length - 1]}`);
 
 await clearAll();
@@ -632,7 +636,7 @@ const shell = await page.evaluate(() => {
   });
   const med = (a) => a.sort((x, y) => x - y)[a.length >> 1];
   const patients = cy.nodes().not('.hidden').filter((n) => n.data('type') === 'patient');
-  const mtb = cy.nodes().not('.hidden').filter((n) => n.data('type') === 'mtb')[0];
+  const mtb = cy.nodes().not('.hidden').filter((n) => n.data('endpoint'))[0];
   return {
     stageMedians: Object.fromEntries(Object.entries(byStage)
       .map(([k, v]) => [k, Math.round(med(v))])),
@@ -650,7 +654,7 @@ check('further along the pipeline sits further in', monotonic,
 check('patients are the outermost ring',
       shell.patientMedian > shell.stageMedians[stages[0]],
       `patients ${shell.patientMedian} vs stage ${stages[0]} ${shell.stageMedians[stages[0]]}`);
-check('the tumour board is the centre', shell.mtbAtCentre === 0, String(shell.mtbAtCentre));
+check('the tumour board portal is the centre', shell.mtbAtCentre === 0, String(shell.mtbAtCentre));
 
 const ringGuides = await page.evaluate(() => {
   const c = document.querySelector('canvas.hulls');
@@ -698,7 +702,7 @@ const clustered = await page.evaluate(() => {
       nearest = Math.min(nearest, Math.hypot(centres[keys[i]].x - centres[keys[j]].x,
                                              centres[keys[i]].y - centres[keys[j]].y));
   return { counts, visible: cy.nodes().not('.hidden').length,
-           nonMaterial: [...(byType.platform ?? [])].concat([...(byType.mtb ?? [])]),
+           nonMaterial: [...(byType.lab ?? [])].concat([...(byType.system ?? [])]),
            widest: Math.round(Math.max(...Object.values(spread))), nearest: Math.round(nearest) };
 });
 const total = Object.values(clustered.counts).reduce((a, b) => a + b, 0);
@@ -714,7 +718,7 @@ check('the buckets are the four outcomes plus context',
 check('no phantom "not collected" material',
       clustered.counts['not collected'] === 5,
       `${clustered.counts['not collected']} — should be the 5 patients with nothing taken`);
-check('platforms and the board are not given an outcome',
+check('labs and the board are not given an outcome',
       clustered.nonMaterial.every((o) => o === 'context'), clustered.nonMaterial.join(','));
 check('the clusters actually separate', clustered.nearest > clustered.widest,
       `widest cluster ${clustered.widest}, closest pair ${clustered.nearest}`);
@@ -800,8 +804,8 @@ const win = await page.evaluate(() => {
     rows: [...w.querySelectorAll('.rowlabel')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
     ticks: [...w.querySelectorAll('.tick span')].map((t) => t.textContent.trim()),
     cards,
-    /* the platforms are the parallel case: three facilities, one date */
-    platforms: [...w.querySelectorAll('.band')]
+    /* the analysis labs are the parallel case: three labs, one date */
+    labs: [...w.querySelectorAll('.band')]
       .map((b) => [...b.querySelectorAll('.card')])
       .find((cs) => cs.length && cs.every((c) => /SciLifeLab|Genomics Express/.test(
         c.querySelector('.name').textContent)))
@@ -844,16 +848,16 @@ check('it names the sample it is about', /^Sample S-/.test(win.head ?? ''), win.
    on the axis. An empty band with a label beside it reads as a gap in the
    record rather than as a step listed underneath. */
 check('there is a row for each kind of thing that has a dated step',
-      win.rows.map((r) => r.split(' ')[0]).join(',') === 'Sample,Activity,Aliquot,Platform,MTB',
+      win.rows.map((r) => r.split(' ')[0]).join(',') === 'Sample,Activity,Aliquot,Lab,MTB',
       win.rows.join(' | '));
 check('the axis is labelled with dates', win.ticks.length >= 4, win.ticks.join(' '));
 
-/* the whole point: three platforms reporting on the same day share a column and
-   stack, rather than being strung out as if one followed another */
-check('parallel work shares one column', win.platforms.length === 3
-      && new Set(win.platforms.map((p) => p.x)).size === 1, JSON.stringify(win.platforms));
+/* the whole point: three analysis labs reporting on the same day share a column
+   and stack, rather than being strung out as if one followed another */
+check('parallel work shares one column', win.labs.length === 3
+      && new Set(win.labs.map((p) => p.x)).size === 1, JSON.stringify(win.labs));
 check('and is stacked, not overlapping',
-      new Set(win.platforms.map((p) => p.y)).size === 3, JSON.stringify(win.platforms));
+      new Set(win.labs.map((p) => p.y)).size === 3, JSON.stringify(win.labs));
 
 /* a fraction is away at a lab for a stretch, not for an instant */
 check('a fraction sent and returned gets a bar for the time it was away',
@@ -870,7 +874,7 @@ check('undated steps are named under the axis, not placed on it',
    detail off with an ellipsis, so a sample read "FFPE · Pathology r…". A card
    that hides what it says is not worth the space it takes. */
 check('no card truncates its text', win.truncated.length === 0, win.truncated.join(' | '));
-/* the three platforms sharing a column are the point of the view, and having to
+/* the three analysis labs sharing a column are the point of the view, and having to
    scroll sideways to find them defeats it */
 check('the whole span fits without scrolling sideways', win.scroller.over === 0,
       `${win.scroller.over}px over`);

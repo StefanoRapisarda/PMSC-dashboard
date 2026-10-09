@@ -78,7 +78,9 @@
      stays bright */
   let lit = $state<Set<string>>(new Set());
 
-  /* v3's defaults: the four spine types plus platform, MTB and deviations on;
+  /* v3's defaults: the four spine types plus labs, systems and deviations on.
+     Systems are on because the journey ends in one, the tumour board portal; the
+     others are pruned until the identifiers they hang from are switched on;
      the detail layers off until asked for. Keeping the visible set small is what
      makes the distance rule legible. */
   let facets = $state<Facets>({
@@ -91,7 +93,7 @@
                  labelling: true, none: true },
     activity: Object.fromEntries(ACTIVITY_ORDER.map((k) => [k, true])),
     ntype: {
-      patient: true, sample: true, aliquot: true, platform: true, mtb: true,
+      patient: true, sample: true, aliquot: true, lab: true, system: true,
       identifier: false, storage: false, activity: false, operator: false,
     },
   });
@@ -414,7 +416,7 @@
    *
    * Bridges run along the derivation spine only. Joining a hidden node's
    * neighbours in general would invent relationships that are not provenance —
-   * and would turn three platform nodes into fourteen thousand edges.
+   * and would turn three lab nodes into fourteen thousand edges.
    */
   function syncBridges(p: Projection) {
     if (!cy) return;
@@ -498,7 +500,7 @@
    *
    * The AREA grows with the number of connections, so the diameter grows with
    * its square root. Scaling the diameter directly would make a node with four
-   * times the connections look sixteen times bigger, and the three platforms,
+   * times the connections look sixteen times bigger, and the labs,
    * with hundreds of lines each, would cover the canvas. Even so they are
    * capped, for the same reason. Only drawn lines count, as on the node card.
    * The growth was tripled on request, because at a third of this the

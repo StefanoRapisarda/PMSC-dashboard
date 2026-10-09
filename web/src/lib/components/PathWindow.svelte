@@ -10,7 +10,7 @@
    * left-to-right line with the wait in days written on the connector between
    * each pair. That shape cannot tell the truth about this pipeline. A sample
    * yields up to three fractions which are made together and analysed at the
-   * same time on three different platforms, so a rail had to invent an order for
+   * same time on three different analysis labs, so a rail had to invent an order for
    * them. It ended up printing a wait of minus one day between two steps that
    * were never sequential at all.
    *
@@ -23,7 +23,7 @@
    * most patients here gave two or more. One shared Activity row then mixed the
    * steps of different samples with nothing to say which was which. Such a path
    * is drawn as one block of rows per sample instead, all on the same time axis,
-   * with the patient above the blocks and the tumour board below them. A path
+   * with the patient above the blocks and the tumour board portal below them. A path
    * with a single sample has no blocks and looks as it always did.
    */
   import { ACTIVITY_LABEL, COLORS, TYPE_LABEL, type NodeType } from '$lib/graph/v3';
@@ -42,7 +42,7 @@
    *
    * A card is only as tall as the text inside it. Fixing the height meant
    * clamping the name to two lines and cutting the detail off with an ellipsis,
-   * so a sample read "FFPE · Pathology r…" and a platform read "Clinical
+   * so a sample read "FFPE · Pathology r…" and an analysis lab read "Clinical
    * Genomics,…". A card that hides what it says is not worth the space it takes.
    * Height is therefore measured after the text has been laid out, and the lanes
    * are spaced from those measurements.
@@ -60,7 +60,7 @@
   const LABEL_GAP = 66;
 
   /** The rows, in pipeline order. A kind of thing with nothing in it is dropped. */
-  const ROW_ORDER: NodeType[] = ['patient', 'sample', 'activity', 'aliquot', 'platform', 'mtb'];
+  const ROW_ORDER: NodeType[] = ['patient', 'sample', 'activity', 'aliquot', 'lab', 'system'];
 
   const steps = $derived(node && model ? model.lineageSteps(node) : []);
 
@@ -102,12 +102,12 @@
   }
 
   /**
-   * Which samples sent material to each platform, and when the last of that
-   * sample's results came back from it. One platform serves several samples of
+   * Which samples sent material to each analysis lab, and when the last of that
+   * sample's results came back from it. One analysis lab serves several samples of
    * the same patient, so in a grouped path it appears once in each of their
    * blocks, dated by that sample's own return rather than by the patient's.
    */
-  const platformRuns = $derived.by(() => {
+  const labRuns = $derived.by(() => {
     const runs = new Map<number, Map<number, string | null>>();
     if (!model) return runs;
     for (const step of steps) {
@@ -132,7 +132,7 @@
    * the whole back half of the path undated. An end-to-end total that stopped at
    * SP3 reported sixteen days when the material had actually taken twice that.
    * The later steps do carry dates, only under different names. An aliquot went
-   * out on `sent_on`, and a platform's moment is when it sent the data back.
+   * out on `sent_on`, and an analysis lab's moment is when it sent the data back.
    */
   function whenOf(n: GraphNode, back: string | null): string | null {
     /* A fraction that has no dispatch date but does have a return date was
@@ -140,7 +140,8 @@
        through to null instead parked it at the very start of the axis, where a
        protein fraction appeared to exist before the sample was collected. */
     if (n.type === 'aliquot') return n.sent_on ?? n.date ?? n.returned_on ?? null;
-    if (n.type === 'platform' || n.type === 'mtb') return back;
+    if (n.type === 'lab') return back;
+    if (n.type === 'system') return ordered;
     return n.date ?? n.collected ?? null;
   }
 
@@ -169,7 +170,8 @@
        crosses a year boundary keeps the full date. */
     const d = (v: string) => (showYear ? v : v.slice(5));
     if (n.type === 'sample') return `collected ${d(when)}`;
-    if (n.type === 'platform' || n.type === 'mtb') return `data back ${d(when)}`;
+    if (n.type === 'lab') return `data back ${d(when)}`;
+    if (n.type === 'system') return `ordered ${d(when)}`;
     if (n.type === 'aliquot') {
       const out = n.sent_on ? `sent ${d(n.sent_on)}` : null;
       const home = n.returned_on ? `back ${d(n.returned_on)}` : null;
@@ -180,9 +182,16 @@
   }
 
   /** The last date on which any fraction of this sample came back. It is what
-      the platform and tumour board steps are dated by. */
+      the analysis-lab steps are dated by. */
   const dataBack = $derived.by(() => {
     const dates = steps.map((s) => s.node.returned_on).filter(Boolean) as string[];
+    return dates.length ? [...dates].sort()[dates.length - 1] : null;
+  });
+
+  /** When the case was ordered in the tumour board portal. A path through more
+      than one sample has one portal card, dated by the latest of their orders. */
+  const ordered = $derived.by(() => {
+    const dates = samples.map((s) => s.ordered_on).filter(Boolean) as string[];
     return dates.length ? [...dates].sort()[dates.length - 1] : null;
   });
 
@@ -196,7 +205,7 @@
   /**
    * One entry per card. `group` is the sample whose block the card sits in, or
    * null for the patient and the board, which belong to no single sample. The
-   * key is unique per card rather than per node, because a platform can appear
+   * key is unique per card rather than per node, because an analysis lab can appear
    * in more than one block.
    */
   type Entry = { key: string; group: number | null; node: GraphNode; when: string | null;
@@ -208,9 +217,9 @@
       return { key: `${group ?? 'all'}:${n.id}`, group, node: n, when, time: timeOf(n),
                detail: detailOf(n), dates: dateLabel(n, when, showYear) };
     };
-    if (!grouped || n.type === 'patient' || n.type === 'mtb') return [make(null, dataBack)];
-    if (n.type === 'platform') {
-      const byGroup = platformRuns.get(n.id);
+    if (!grouped || n.type === 'patient' || n.type === 'system') return [make(null, dataBack)];
+    if (n.type === 'lab') {
+      const byGroup = labRuns.get(n.id);
       if (!byGroup?.size) return [make(-1, dataBack)];
       return [...byGroup].map(([group, back]) => make(group, back));
     }
@@ -223,7 +232,7 @@
   /**
    * Every distinct date something happened on, earliest first.
    *
-   * A fraction coming back from a platform is one of those dates even though the
+   * A fraction coming back from an analysis lab is one of those dates even though the
    * card is positioned by its dispatch. Leaving returns out made the axis claim
    * a seventeen-day silence in the middle of the run, when in fact the peptide
    * fraction reported back partway through it.
@@ -257,7 +266,7 @@
    * How wide the axis is.
    *
    * A day gets PX_PER_DAY of room, but never at the cost of pushing the end of
-   * the journey off the side of the window. The three platforms reporting on the
+   * the journey off the side of the window. The three analysis labs reporting on the
    * same day are the whole point of the view, and having to scroll right to find
    * them defeats it. A journey long enough that even the fitted width would be
    * unreadable scrolls instead.
@@ -272,7 +281,7 @@
    *
    * Two cards in the same lane must not overlap, so a card goes into the first
    * lane whose previous card has already finished by the time this one starts.
-   * Three platforms reporting on the same day therefore end up in three lanes,
+   * Three analysis labs reporting on the same day therefore end up in three lanes,
    * one above the other, at the same point on the axis.
    */
   type Placed = Entry & { x: number; lane: number };
@@ -280,7 +289,7 @@
                count: number; lanes: number; cards: Placed[]; off: Entry[] };
 
   /** Rows inside a sample's block. The patient and the board sit outside them. */
-  const BLOCK_ORDER: NodeType[] = ['sample', 'activity', 'aliquot', 'platform'];
+  const BLOCK_ORDER: NodeType[] = ['sample', 'activity', 'aliquot', 'lab'];
 
   function rowOf(key: string, type: NodeType, group: number | null,
                  members: Entry[]): Row | null {
@@ -310,7 +319,9 @@
       laneEnds[lane] = x + CARD_W + 8;
       return { ...card, x, lane };
     });
-    return { key, type, label: TYPE_LABEL[type] ?? type, group, count: members.length,
+    /* the portal's row is named after it, since it is the only system on a path */
+    const label = members[0].node.short ?? TYPE_LABEL[type] ?? type;
+    return { key, type, label, group, count: members.length,
              lanes: Math.max(1, laneEnds.length), cards, off };
   }
 
@@ -319,7 +330,7 @@
    *
    * Two cards in the same lane must not overlap, so a card goes into the first
    * lane whose previous card has already finished by the time this one starts.
-   * Three platforms reporting on the same day therefore end up in three lanes,
+   * Three analysis labs reporting on the same day therefore end up in three lanes,
    * one above the other, at the same point on the axis.
    */
   const rows = $derived.by(() => {
@@ -337,7 +348,7 @@
           out.push(rowOf(`${group}:${type}`, type, group, of(type, group)));
         }
       }
-      out.push(rowOf('mtb', 'mtb', null, of('mtb', null)));
+      out.push(rowOf('system', 'system', null, of('system', null)));
     }
     return out.filter((r): r is Row => r !== null);
   });
@@ -416,7 +427,7 @@
   /**
    * How long each fraction was away.
    *
-   * A card is a moment, but a fraction sent to a platform is not a moment. It is
+   * A card is a moment, but a fraction sent to an analysis lab is not a moment. It is
    * away for a stretch and then reports back, and that stretch is most of where
    * the time goes. The bar is drawn behind the cards, so only the part that
    * reaches past the card shows, which is exactly the period still outstanding.
@@ -471,8 +482,8 @@
         if (n.qc) bits.push(`QC ${n.qc}`);
         return bits.filter(Boolean).join(' · ');
       }
-      case 'platform': return '';
-      case 'mtb': return '';
+      case 'lab': return '';
+      case 'system': return '';
       default: return n.type;
     }
   }
@@ -588,7 +599,7 @@
                     <div class="outbar"
                          style="left:{bar.x}px; width:{bar.w}px;
                                 top:{topOf(row.key, bar.lane) + MIN_CARD_H / 2 - 3}px"
-                         title="away at the platform for {bar.days} days">
+                         title="away at the analysis lab for {bar.days} days">
                       <span class="cap"></span>
                     </div>
                   {/each}
@@ -652,13 +663,13 @@
       {/if}
       <p class="foot">
         A card sits at the date its step was recorded, so anything stacked in a
-        column happened at the same time. The three platforms run in parallel on
+        column happened at the same time. The three analysis labs run in parallel on
         three fractions of the one sample, which is why they share a column. The
         dashed bar behind a fraction runs from the day it was sent to the day its
         results came back, and the dot marks the return.
         {#if grouped}
           Each sample has its own block of rows, so every step and fraction sits
-          with the sample it came from. A platform that analysed more than one of
+          with the sample it came from. An analysis lab that analysed more than one of
           these samples appears in each of their blocks.
         {/if}
 

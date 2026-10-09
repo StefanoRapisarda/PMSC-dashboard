@@ -37,10 +37,23 @@ class Staff(Base):
 
 
 class Facility(Base):
+    """A lab, meaning a place where work is done on the material."""
     __tablename__ = "facility"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80), unique=True)
     kind: Mapped[str | None] = mapped_column(String(40))
+
+
+class InformationSystem(Base):
+    """Software where something about a patient or a sample is registered.
+
+    Kept apart from Facility because a system does no work on the material. It
+    issues identifiers and records events, which is a different relationship.
+    """
+    __tablename__ = "information_system"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    kind: Mapped[str | None] = mapped_column(String(60))
 
 
 class StorageLocation(Base):
@@ -140,6 +153,9 @@ class Activity(Base):
     performed_at: Mapped[str | None] = mapped_column(String(5))
     staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff.id"), index=True)
     facility_id: Mapped[int | None] = mapped_column(ForeignKey("facility.id"))
+    # where the step is recorded, for a step that is an entry in a system rather
+    # than work in a lab, such as the tumour board order in the portal
+    system_id: Mapped[int | None] = mapped_column(ForeignKey("information_system.id"))
 
     specimen: Mapped[Specimen] = relationship(back_populates="activities")
 
@@ -161,7 +177,13 @@ class PlatformRun(Base):
 class Identifier(Base):
     __tablename__ = "identifier"
     id: Mapped[int] = mapped_column(primary_key=True)
-    system: Mapped[str] = mapped_column(String(60), index=True)
+    # The kind of identifier, such as a PAD number. It used to be called
+    # `system`, which made it easy to mistake for the software that issues it.
+    scheme: Mapped[str] = mapped_column(String(60), index=True)
+    issued_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("information_system.id"), index=True)
+    recorded_in_id: Mapped[int | None] = mapped_column(
+        ForeignKey("information_system.id"), index=True)
     value: Mapped[str] = mapped_column(String(80), index=True)
     owner_type: Mapped[str] = mapped_column(String(20), index=True)
     owner_id: Mapped[int] = mapped_column(Integer, index=True)
