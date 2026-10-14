@@ -30,6 +30,7 @@
   import { elementShot, savePdf, savePng, stamp } from '$lib/graph/export';
   import type { GraphModel } from '$lib/graph/model';
   import type { GraphNode } from '$lib/types';
+  import HowToRead, { type KeyItem } from './HowToRead.svelte';
 
   let { node, model, onClose }: {
     node: GraphNode | null; model: GraphModel | null; onClose: () => void;
@@ -512,10 +513,224 @@
     }
   }
 
+  /* The path can be drawn two ways, and the tabs in the header switch between
+     them. The metro view opens first. The swimlane is the original timeline. */
+  const VIEWS = [['metro', 'Metro view'], ['swimlane', 'Swimlane view']] as const;
+  let view = $state<'swimlane' | 'metro'>('metro');
+
+  /**
+   * The metro view.
+   *
+   * Each sample is one line. The line runs through the sample and the activities
+   * that produce no fraction, in the order the swimlane places them. It then
+   * splits into one branch per fraction. A branch starts at the activity that
+   * generated its fraction, passes the day the fraction was sent and the day its
+   * analysis lab sent the data back, and meets the other branches at the order in
+   * the tumour board portal. One activity can generate two fractions, as AllPrep
+   * does for DNA and RNA. Its two stops are then joined by an interchange bar, the
+   * way a metro map draws a station that two lines share. Stops are evenly spaced,
+   * and the number on each stretch of line is the days between the two recorded
+   * dates.
+   */
+  const M_X0 = 60, M_DX = 118, M_GAPY = 64;
+  const M_ACT = 190, M_SENT = 340, M_BACK = 510, M_PORTAL = 680;
+  type MStop = { key: string; x: number; y: number; label: string; when: string | null;
+                 dates: string; node: GraphNode; detail: string; big: boolean;
+                 above: boolean; anchor: 'start' | 'middle' | 'end'; side?: boolean };
+  type MSeg = { d: string; colour: string; days: number | null; mx: number; my: number };
+  type MMap = { key: string; head: string | null; w: number; h: number; stops: MStop[];
+                segs: MSeg[]; links: { x: number; y1: number; y2: number }[] };
+
+  /** The node at the other end of a node's first link of one kind, read from the graph. */
+  function linked(n: GraphNode, type: string, dir: 'in' | 'out'): number | null {
+    return (model?.adj[n.id] ?? []).find((x) => x.t === type && x.dir === dir)?.o ?? null;
+  }
+  const between = (a: string | null, b: string | null) => (a && b ? days(a, b) : null);
+  const colourOf = (n: GraphNode) => COLORS[n.type] ?? '#8ea0ba';
+  /* Undated steps go last. Within one date the sort is stable, so the pipeline
+     order decides, for the reason given where the swimlane rows are built. */
+  const byDate = (a: Entry, b: Entry) =>
+    (a.when ? 0 : 1) - (b.when ? 0 : 1)
+    || (a.when && b.when ? a.when.localeCompare(b.when) : 0);
+
+  const metroMaps = $derived.by((): MMap[] => {
+    const groups: (number | null)[] = grouped
+      ? [...samples.map((s) => s.id), ...(dated.some((d) => d.group === -1) ? [-1] : [])]
+      : [null];
+    const portal = dated.find((d) => d.node.type === 'system') ?? null;
+    /* a grouped path names its patient in the header, so its maps start at the sample */
+    const pat = grouped ? null : dated.find((d) => d.node.type === 'patient') ?? null;
+
+    return groups.map((g): MMap => {
+      const inGroup = dated.filter((d) => d.group === g);
+      const activities = inGroup.filter((d) => d.node.type === 'activity');
+      const labs = inGroup.filter((d) => d.node.type === 'lab');
+      /* each fraction with the activity that generated it, siblings next to each other */
+      const fractions = inGroup.filter((d) => d.node.type === 'aliquot').map((f) => {
+        const actId = linked(f.node, 'generated', 'in');
+        return { f, act: activities.find((a) => a.node.id === actId) ?? null };
+      }).sort((a, b) => byDate(a.act ?? a.f, b.act ?? b.f) || (a.act?.node.id ?? 0) - (b.act?.node.id ?? 0));
+      const onBranch = new Set(fractions.map((x) => x.act?.node.id));
+      const trunk = [...(pat ? [pat] : []), ...inGroup
+        .filter((d) => d.node.type === 'sample'
+                       || (d.node.type === 'activity' && !onBranch.has(d.node.id)))
+        .sort(byDate)];
+
+      const half = (Math.max(0, fractions.length - 1) * M_GAPY) / 2;
+      const y0 = half + 50;
+      const stops: MStop[] = [];
+      const segs: MSeg[] = [];
+      const links: MMap['links'] = [];
+      const stop = (e: Entry, x: number, y: number, more: Partial<MStop> = {}): MStop => ({
+        key: `${e.key}@${x},${y}`, x, y, label: e.node.label, when: e.when, dates: e.dates,
+        node: e.node, detail: e.detail, big: false, above: true, anchor: 'middle', ...more,
+      });
+
+      const forks = fractions.length > 1;
+      trunk.forEach((e, k) => {
+        const lastOne = k === trunk.length - 1;
+        stops.push(stop(e, M_X0 + k * M_DX, y0, {
+          big: k === 0 || (lastOne && forks),
+          above: k % 2 === 0, anchor: lastOne && forks ? 'end' : 'middle',
+        }));
+        if (k > 0) segs.push({
+          d: `M${M_X0 + (k - 1) * M_DX},${y0} H${M_X0 + k * M_DX}`, colour: colourOf(e.node),
+          days: between(trunk[k - 1].when, e.when), mx: M_X0 + (k - 0.5) * M_DX, my: y0,
+        });
+      });
+      const xF = M_X0 + Math.max(0, trunk.length - 1) * M_DX;
+      const forkWhen = trunk.length ? trunk[trunk.length - 1].when : null;
+      const xP = fractions.length ? xF + M_PORTAL : xF + M_DX;
+
+      fractions.forEach(({ f, act }, j) => {
+        const dy = forks ? -half + j * M_GAPY : 0, y = y0 + dy, ady = Math.abs(dy);
+        const xC = xF + M_ACT, xA = xF + M_SENT, xL = xF + M_BACK;
+        /* the shared activity is named once: above the top branch, or below the bottom one */
+        const prevSame = j > 0 && act && fractions[j - 1].act?.node.id === act.node.id;
+        const nextSame = j < fractions.length - 1 && act
+          && fractions[j + 1].act?.node.id === act.node.id;
+        let from = xF, fromWhen = forkWhen;
+        const leave = (x: number) => (dy ? `M${xF},${y0} L${xF + ady},${y} H${x}` : `M${xF},${y0} H${x}`);
+        if (act) {
+          let k = j;
+          while (k > 0 && fractions[k - 1].act?.node.id === act.node.id) k--;
+          const topIsAbove = forks && -half + k * M_GAPY < 0;
+          const showLabel = topIsAbove ? j === k : !nextSame;
+          stops.push(stop(act, xC, y, { above: topIsAbove && j === k,
+                                        label: showLabel ? act.node.label : '' }));
+          segs.push({ d: leave(xC), colour: colourOf(act.node), days: between(forkWhen, act.when),
+                      mx: (xF + ady + xC) / 2, my: y });
+          if (prevSame) links.push({ x: xC, y1: y - M_GAPY, y2: y });
+          from = xC; fromWhen = act.when;
+        }
+        const mol = f.node.molLabel ?? f.node.mol ?? 'Fraction';
+        stops.push(stop(f, xA, y, { label: `${mol} sent`, above: dy < 0 }));
+        segs.push({ d: from === xF ? leave(xA) : `M${from},${y} H${xA}`,
+                    colour: colourOf(f.node), days: between(fromWhen, f.when),
+                    mx: from === xF ? (xF + ady + xA) / 2 : (from + xA) / 2, my: y });
+        from = xA; fromWhen = f.when;
+        /* the lab stop is dated by this fraction's own return, not the sample's last one */
+        const labId = linked(f.node, 'submitted_to', 'out');
+        const lab = labs.find((l) => l.node.id === labId);
+        const back = f.node.returned_on ?? null;
+        if (lab) {
+          stops.push(stop(lab, xL, y, { when: back, above: dy < 0,
+                                        dates: dateLabel(lab.node, back, showYear) }));
+          segs.push({ d: `M${xA},${y} H${xL}`, colour: colourOf(lab.node),
+                      days: between(f.when, back), mx: (xA + xL) / 2, my: y });
+          from = xL; fromWhen = back;
+        }
+        if (portal) segs.push({
+          d: dy ? `M${from},${y} H${xP - ady} L${xP},${y0}` : `M${from},${y0} H${xP}`,
+          colour: colourOf(portal.node), days: between(fromWhen, portal.when),
+          mx: (from + xP - ady) / 2, my: y,
+        });
+      });
+
+      if (portal) {
+        if (!fractions.length && trunk.length) segs.push({
+          d: `M${xF},${y0} H${xP}`, colour: colourOf(portal.node),
+          days: between(forkWhen, portal.when), mx: (xF + xP) / 2, my: y0,
+        });
+        stops.push(stop(portal, xP, y0, { big: true, side: true, anchor: 'start' }));
+      }
+      return { key: String(g), head: grouped ? groupName(g) : null,
+               w: Math.max(...stops.map((s) => s.x), 0) + (portal ? 230 : 110),
+               h: y0 + half + 50, stops, segs, links };
+    });
+  });
+
+  const pillText = (d: number) => (d === 0 ? 'same day' : `${d} d`);
+
+  /** The stop whose details are showing under the map. */
+  let picked = $state<MStop | null>(null);
+  $effect(() => { void node; picked = null; });
+
+  /* The card opens beside the stop that was clicked, below it when it fits and
+     above it when it does not. It floats outside the dialog, because the dialog
+     is positioned with a transform, and a fixed element inside it would be
+     placed against the dialog rather than the screen. */
+  let anchor = $state<DOMRect | null>(null);
+  let pop = $state<HTMLElement | null>(null);
+  let popPos = $state({ top: 0, left: 0 });
+
+  function pick(s: MStop, e: Event) {
+    if (picked?.key === s.key) { picked = null; return; }
+    const g = e.currentTarget as Element;
+    anchor = (g.querySelector('circle') ?? g).getBoundingClientRect();
+    picked = s;
+  }
+
+  $effect(() => {
+    if (!pop || !anchor) return;
+    const h = pop.offsetHeight, w = pop.offsetWidth;
+    let top = anchor.bottom + 8;
+    if (top + h > innerHeight - 8) top = Math.max(8, anchor.top - h - 8);
+    const left = Math.min(Math.max(8, anchor.left - 20), innerWidth - w - 8);
+    popPos = { top, left };
+  });
+
+  /* A scroll moves the stop away from its card, and a press anywhere else means
+     the reader has moved on, so either one closes the card. */
+  $effect(() => {
+    if (!picked) return;
+    const onScroll = (e: Event) => { if (!pop?.contains(e.target as Node)) picked = null; };
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element;
+      if (!pop?.contains(t) && !t.closest('.mstop')) picked = null;
+    };
+    addEventListener('scroll', onScroll, true);
+    addEventListener('pointerdown', onDown, true);
+    return () => {
+      removeEventListener('scroll', onScroll, true);
+      removeEventListener('pointerdown', onDown, true);
+    };
+  });
+
+  const metroKey: KeyItem[] = [
+    { glyph: 'stop', text: 'Each stop is a recorded step.' },
+    { glyph: 'fork', text: 'Each fraction gets its own line.' },
+    { glyph: 'shared', text: 'Joined stops are one activity that made both fractions.' },
+    { glyph: 'time', text: 'Numbers are days between recorded dates.' },
+    { glyph: 'click', text: 'Click a stop for details.' },
+  ];
+
+  /* The timeline's key: a drawing of one chart element and one short sentence about it. */
+  const key = $derived<KeyItem[]>([
+    { glyph: 'card', text: 'A card sits at the date of its step.' },
+    { glyph: 'column', text: 'A column happened at the same time.' },
+    { glyph: 'away', text: 'A dashed bar is a fraction away at a lab.' },
+    ...(grouped ? [{ glyph: 'lane' as const, text: 'Each sample has its own rows.' }] : []),
+  ]);
+
   /* Escape closes the window, as it does every other dialog here. */
   $effect(() => {
     if (!node) return;
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    /* an open stop card closes first, and the window on the next press */
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (picked) picked = null; else onClose();
+    };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   });
@@ -538,6 +753,12 @@
             {#if sample?.stype}<span class="qual">· {sample.stype}</span>{/if}
           {/if}
         </h2>
+        <div class="viewtabs" role="tablist" aria-label="How the path is drawn" data-noexport>
+          {#each VIEWS as [key, label]}
+            <button role="tab" aria-selected={view === key} class:active={view === key}
+                    onclick={() => (view = key)}>{label}</button>
+          {/each}
+        </div>
       </div>
       <div class="totals">
         {#if elapsed !== null}<span><b>{elapsed}</b> days end to end</span>{/if}
@@ -555,7 +776,44 @@
       <button class="x" data-noexport onclick={onClose} aria-label="Close">✕</button>
     </header>
 
-    {#if !dated.length}
+    {#if view === 'metro' && dated.length}
+      <div class="mscroll">
+        {#each metroMaps as map (map.key)}
+          {#if map.head}<p class="mhead">{map.head}</p>{/if}
+          <svg viewBox="0 0 {map.w} {map.h}" style="width:min(100%, {map.w}px)"
+               role="group" aria-label={map.head ?? 'The path as a metro map'}>
+            {#each map.segs as seg}
+              <path d={seg.d} stroke={seg.colour} class="track" />
+            {/each}
+            {#each map.segs.filter((s) => s.days != null) as seg}
+              {@const text = pillText(seg.days!)}
+              {@const w = text.length * 6.4 + 12}
+              <g class="mdur" class:bad={seg.days! < 0} transform="translate({seg.mx},{seg.my})">
+                <rect x={-w / 2} y="-9" width={w} height="18" rx="9" stroke={seg.colour} />
+                <text y="4">{text}</text>
+              </g>
+            {/each}
+            {#each map.links as link}
+              <rect class="mlink" x={link.x - 8} y={link.y1 - 8} width="16"
+                    height={link.y2 - link.y1 + 16} rx="8" />
+            {/each}
+            {#each map.stops as s (s.key)}
+              <g class="mstop" class:active={picked?.key === s.key} role="button" tabindex="0"
+                 aria-label={s.label} onclick={(e) => pick(s, e)}
+                 onkeydown={(e) => (e.key === 'Enter' || e.key === ' ')
+                   && pick(s, e)}>
+                <title>{s.label} · {s.dates}</title>
+                <circle cx={s.x} cy={s.y} r={s.big ? 10 : 6} stroke-width={s.big ? 3 : 2.5} />
+                <text x={s.x + (s.side ? 16 : s.anchor === 'end' ? -14 : 0)}
+                      y={s.y + (s.side ? 5 : s.above ? -18 : 26)}
+                      text-anchor={s.anchor} class:big={s.big}>{s.label}</text>
+              </g>
+            {/each}
+          </svg>
+        {/each}
+      </div>
+      <div class="foot"><HowToRead items={metroKey} /></div>
+    {:else if !dated.length}
       <p class="empty">Nothing has been recorded for this one yet.</p>
     {:else}
       <div class="scroll" bind:clientWidth={frameW}>
@@ -661,21 +919,23 @@
           {sample.deviations.join(' · ')}
         </p>
       {/if}
-      <p class="foot">
-        A card sits at the date its step was recorded, so anything stacked in a
-        column happened at the same time. The three analysis labs run in parallel on
-        three fractions of the one sample, which is why they share a column. The
-        dashed bar behind a fraction runs from the day it was sent to the day its
-        results came back, and the dot marks the return.
-        {#if grouped}
-          Each sample has its own block of rows, so every step and fraction sits
-          with the sample it came from. An analysis lab that analysed more than one of
-          these samples appears in each of their blocks.
-        {/if}
-
-      </p>
+      <div class="foot"><HowToRead items={key} /></div>
     {/if}
   </div>
+  {#if picked}
+    <div class="mdetail" role="dialog" aria-label={picked.node.label} bind:this={pop}
+         style="top:{popPos.top}px; left:{popPos.left}px; --c:{colourOf(picked.node)}">
+      <button class="mx" onclick={() => (picked = null)} aria-label="Close">✕</button>
+      <span class="mtype">{TYPE_LABEL[picked.node.type] ?? picked.node.type}</span>
+      <b>{picked.node.label}</b>
+      {#if picked.detail}<span>{picked.detail}</span>{/if}
+      <span class="mwhen">{picked.dates}</span>
+      {#if picked.node.qc === 'fail'}<span class="flag bad">QC fail</span>{/if}
+      {#if picked.node.qc === 'pending'}<span class="flag pending">QC pending</span>{/if}
+      {#if picked.node.stalled_days}
+        <span class="flag bad">stalled {picked.node.stalled_days} days</span>{/if}
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -694,6 +954,37 @@
              text-transform: uppercase; color: var(--muted); }
   h2 { margin: 0; font-size: 17px; }
   h2 .qual { color: var(--muted); font-weight: 600; }
+  .mscroll { overflow: auto; padding: 14px 18px 4px; }
+  .mscroll svg { display: block; height: auto; margin-bottom: 6px; }
+  .mhead { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: var(--muted); }
+  .track { fill: none; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+  .mdur rect { fill: #fff; stroke-width: 1.5; }
+  .mdur text { font-size: 11px; font-weight: 600; fill: var(--muted); text-anchor: middle; }
+  .mdur.bad rect { stroke: #b3401f; }
+  .mdur.bad text { fill: #b3401f; }
+  .mlink { fill: #fff; stroke: #22303b; stroke-width: 2.5; }
+  .mstop { cursor: pointer; outline: none; }
+  .mstop circle { fill: #fff; stroke: #22303b; }
+  .mstop text { font-size: 12px; font-weight: 600; fill: var(--ink); }
+  .mstop text.big { font-size: 13px; font-weight: 800; }
+  .mstop:hover text, .mstop:focus-visible text, .mstop.active text { text-decoration: underline; }
+  .mstop.active circle, .mstop:focus-visible circle { stroke: var(--accent); stroke-width: 4; }
+  .mdetail { position: fixed; z-index: 70; display: flex; flex-direction: column; gap: 5px;
+             width: 280px; max-width: calc(100vw - 16px); box-sizing: border-box;
+             padding: 12px 34px 12px 14px; border: 1px solid var(--border);
+             border-left: 4px solid var(--c); border-radius: 10px; font-size: 13px;
+             background: #fff; box-shadow: 0 14px 36px rgba(20, 30, 40, .28); }
+  .mdetail .flag { align-self: flex-start; }
+  .mdetail .mtype { font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+                    text-transform: uppercase; color: var(--muted); }
+  .mdetail .mwhen { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  .mdetail .mx { position: absolute; top: 6px; right: 8px; border: 0; background: none;
+                 font-size: 15px; color: var(--muted); cursor: pointer; }
+  .viewtabs { display: flex; gap: 4px; margin-top: 8px; }
+  .viewtabs button { border: 1px solid var(--border); background: #fff; font: inherit;
+                     font-size: 12px; padding: 4px 12px; border-radius: 7px; cursor: pointer;
+                     color: var(--ink); }
+  .viewtabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .totals { margin-left: auto; display: flex; gap: 16px; align-items: baseline;
             font-size: 12px; color: var(--muted); flex: 0 1 auto; }
   .totals b { color: var(--ink); font-size: 14px; }
@@ -798,7 +1089,6 @@
   .notdated b { color: var(--ink); }
   .notdated .who { font-weight: 700; color: var(--ink); }
   .devs { margin: 0; padding: 6px 18px 8px; font-size: 12px; color: #b3401f; }
-  .foot { margin: 0; padding: 0 18px 15px; font-size: 11.5px; color: var(--muted);
-          line-height: 1.5; }
+  .foot { padding: 0 18px 4px; }
   .empty { padding: 26px 18px; color: var(--muted); }
 </style>

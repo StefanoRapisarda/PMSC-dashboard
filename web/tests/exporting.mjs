@@ -126,6 +126,11 @@ await page.evaluate(() => [...document.querySelectorAll('.ctx button')]
 await settle(400);
 await page.click('.historybtn');
 await settle(1000);
+/* The window opens on the metro view. These checks read the swimlane timeline,
+   so they switch to it first. */
+await page.evaluate(() => [...document.querySelectorAll('.win .viewtabs button')]
+  .find((b) => b.textContent.includes('Swimlane')).click());
+await settle(400);
 
 /* What the picture must contain: the dialog is a fixed-size window onto content
    that scrolls inside it, so the first version of this photographed the window
