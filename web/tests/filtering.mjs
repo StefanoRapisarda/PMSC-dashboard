@@ -787,6 +787,11 @@ await page.evaluate(() => [...document.querySelectorAll('.ctx button')]
 await settle(400);
 await page.click('.historybtn');
 await settle(700);
+/* The window opens on the metro view. These checks read the swimlane timeline,
+   so they switch to it first. */
+await page.evaluate(() => [...document.querySelectorAll('.win .viewtabs button')]
+  .find((b) => b.textContent.includes('Swimlane')).click());
+await settle(400);
 
 const win = await page.evaluate(() => {
   const w = document.querySelector('.win');

@@ -9,8 +9,32 @@
     LANES, PHASES, ANALYSIS_LAB_LANES, STAGES,
     barWidth, cumulative, formatDuration, type Phase,
   } from '$lib/workflow';
+  import HowToRead, { type KeyItem } from '$lib/components/HowToRead.svelte';
 
   const AXIS_H = 44, LANE_H = 56, BAR_H = 30, GAP = 6;
+
+  /* The journey can be drawn two ways, and the tabs under the heading switch
+     between them. The swimlane is the original chart. The metro view is new. */
+  const VIEWS = [['metro', 'Metro view'], ['swimlane', 'Swimlane view']] as const;
+  let view = $state<'swimlane' | 'metro'>('metro');
+
+  /* Each view's key: a drawing of one chart element and one short sentence about it. */
+  const KEYS: Record<'swimlane' | 'metro', KeyItem[]> = {
+    metro: [
+      { glyph: 'stop', text: 'Each stop is a step.' },
+      { glyph: 'ring', text: 'Rings mark key moments.' },
+      { glyph: 'fork', text: 'The sample splits into DNA, RNA and protein.' },
+      { glyph: 'time', text: 'Times are planned, without waiting.' },
+      { glyph: 'click', text: 'Click a stop for details.' },
+    ],
+    swimlane: [
+      { glyph: 'lane', text: 'Each row is a team or lab.' },
+      { glyph: 'bar', text: 'Longer bars take longer, but not to scale.' },
+      { glyph: 'pin', text: 'A pin is a moment.' },
+      { glyph: 'time', text: 'Times are planned, without waiting.' },
+      { glyph: 'click', text: 'Click a step for details.' },
+    ],
+  };
 
   /* The step whose card is open, and where on screen its bar is. The card floats
      above the page rather than sitting inside the chart, because the chart scrolls
@@ -49,7 +73,7 @@
   function onPointerDown(e: PointerEvent) {
     if (selected == null) return;
     const t = e.target as Element;
-    if (card?.contains(t) || t.closest('.wfbar, .pin')) return;
+    if (card?.contains(t) || t.closest('.wfbar, .pin, .stop')) return;
     closeCard();
   }
 
@@ -108,6 +132,104 @@
 
   const allprep = step('AllPrep extraction') + 1;
 
+  /* The metro map. One line runs through every step up to co-extraction. There it
+     splits into a DNA, an RNA and a protein line, because the three fractions are
+     checked and analysed in parallel, and the lines meet again at data analysis.
+     Stops are evenly spaced, so as in the swimlane, distance along a line is not
+     time. The time is written on the line instead.
+
+     The line is folded into three rows so that the whole journey fits in the box
+     without scrolling. The first row runs left to right and ends at pathology, the
+     second runs back from right to left, and the third holds the split and the
+     merge. The drawing is scaled to the width of the box. */
+  const METRO_W = 1200, METRO_H = 510, FORK = 60;
+  const Y1 = 70, Y2 = 210, Y3 = 400, X_LEFT = 80, X_RIGHT = 1060;
+
+  interface Stop { i: number; x: number; y: number; label: string; big: boolean;
+                   above: boolean; anchor: 'start' | 'middle' | 'end'; }
+  interface Segment { d: string; colour: string; dur: number; mx: number; my: number; }
+
+  const split = step('AllPrep extraction'), qc = step('Concentration & QC');
+  const labs = step('Analysis at the labs'), merge = step('Data analysis');
+  const firstRowEnd = step('Pathology — cut & rack');
+  const last = STAGES.length - 1;
+
+  /* The three lab stops take their names from the analysis lab rows of the swimlane. */
+  const FRACTIONS = [
+    { name: 'DNA', dy: -FORK, lab: ANALYSIS_LAB_LANES[0][1] },
+    { name: 'RNA', dy: 0, lab: ANALYSIS_LAB_LANES[1][1] },
+    { name: 'protein', dy: FORK, lab: ANALYSIS_LAB_LANES[2][1] },
+  ];
+
+  /* Each of the first two rows spreads its stops across the full width. The
+     second row starts under the first row's last stop and stops short of the
+     left bend. */
+  const X_ROW2_END = 260;
+  const DX1 = (X_RIGHT - X_LEFT) / firstRowEnd;
+  const DX2 = (X_RIGHT - X_ROW2_END) / (split - firstRowEnd - 2);
+  const trunkAt = (i: number) => i <= firstRowEnd
+    ? { x: X_LEFT + i * DX1, y: Y1 }
+    : { x: X_RIGHT - (i - firstRowEnd - 1) * DX2, y: Y2 };
+
+  const xSplit = 230, xQc = 420, xLab = 620, xMerge = 860, xEnd = 1000;
+  const colourOf = (i: number) => PHASES[STAGES[i].phase][1];
+
+  const stops: Stop[] = [
+    ...STAGES.slice(0, split).map((s, i): Stop => ({
+      i, ...trunkAt(i), label: s.short, big: !!s.event,
+      above: i % 2 === 0, anchor: 'middle',
+    })),
+    { i: split, x: xSplit, y: Y3, label: STAGES[split].short, big: true,
+      above: true, anchor: 'end' },
+    ...FRACTIONS.flatMap((f): Stop[] => [
+      { i: qc, x: xQc, y: Y3 + f.dy, label: `Check ${f.name}`, big: false,
+        above: f.dy < 0, anchor: 'middle' },
+      { i: labs, x: xLab, y: Y3 + f.dy, label: f.lab, big: false,
+        above: f.dy < 0, anchor: 'middle' },
+    ]),
+    { i: merge, x: xMerge, y: Y3, label: STAGES[merge].short, big: true,
+      above: true, anchor: 'start' },
+    { i: last, x: xEnd, y: Y3, label: STAGES[last].short, big: true,
+      above: false, anchor: 'middle' },
+  ];
+
+  /* A stretch between two stops on the same row is straight. The two stretches
+     that change row are drawn as half-circle bends, on the right and then on the
+     left, and their time label sits at the outermost point of the bend. */
+  function trunkSegment(i: number): Segment {
+    const a = trunkAt(i);
+    const b = i + 1 === split ? { x: xSplit, y: Y3 } : trunkAt(i + 1);
+    const base = { colour: colourOf(i + 1), dur: STAGES[i].dur };
+    if (a.y === b.y) return { ...base, d: `M${a.x},${a.y} H${b.x}`,
+                              mx: (a.x + b.x) / 2, my: a.y };
+    const r = (b.y - a.y) / 2;
+    if (i === firstRowEnd) {
+      const xr = X_RIGHT + 40;
+      return { ...base, d: `M${a.x},${a.y} H${xr} A${r},${r} 0 0 1 ${xr},${b.y} H${b.x}`,
+               mx: xr + r, my: a.y + r };
+    }
+    const xl = 160;
+    return { ...base, d: `M${a.x},${a.y} H${xl} A${r},${r} 0 0 0 ${xl},${b.y} H${b.x}`,
+             mx: xl - r, my: a.y + r };
+  }
+
+  const segments: Segment[] = [
+    ...STAGES.slice(0, split).map((_, i) => trunkSegment(i)),
+    /* Each branch leaves the fork on a diagonal and rejoins it on another. */
+    ...FRACTIONS.flatMap(({ dy }): Segment[] => [
+      { d: `M${xSplit},${Y3} L${xSplit + Math.abs(dy)},${Y3 + dy} H${xQc}`,
+        colour: colourOf(qc), dur: STAGES[split].dur,
+        mx: (xSplit + FORK + xQc) / 2, my: Y3 + dy },
+      { d: `M${xQc},${Y3 + dy} H${xLab}`, colour: colourOf(labs), dur: STAGES[qc].dur,
+        mx: (xQc + xLab) / 2, my: Y3 + dy },
+      { d: `M${xLab},${Y3 + dy} H${xMerge - Math.abs(dy)} L${xMerge},${Y3}`,
+        colour: colourOf(merge), dur: STAGES[labs].dur,
+        mx: (xLab + xMerge - FORK) / 2, my: Y3 + dy },
+    ]),
+    { d: `M${xMerge},${Y3} H${xEnd}`, colour: colourOf(last), dur: STAGES[merge].dur,
+      mx: (xMerge + xEnd) / 2, my: Y3 },
+  ];
+
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && closeCard()}
@@ -118,12 +240,13 @@
     <div class="jhead">
       <div>
         <h2 style="margin:0">PreDDLung sample journey</h2>
-        <p class="lede">Each row is a participant in the journey, meaning a department, a lab or
-          a service provider that carries out one or more of its steps. The steps run from left
-          to right in the order they happen. A bar grows with the time its step takes, but the scale is compressed
-          so that short steps stay readable, which means distance along a row is not time.
-          The durations under the bars are the planned times of each step, and they do not
-          include waiting between steps. Click a step to see its details.</p>
+        <div class="viewtabs" role="tablist" aria-label="How the journey is drawn">
+          {#each VIEWS as [key, label]}
+            <button role="tab" aria-selected={view === key} class:active={view === key}
+                    onclick={() => { closeCard(); view = key; }}>{label}</button>
+          {/each}
+        </div>
+        <HowToRead items={KEYS[view]} />
       </div>
     </div>
 
@@ -131,6 +254,37 @@
          where the chart scrolls sideways. The legend and the totals sit beside them. -->
     <div class="jbody">
       <div class="jmain">
+    {#if view === 'metro'}
+    <div class="metrowrap">
+      <svg viewBox="0 0 {METRO_W} {METRO_H}" role="group" aria-label="The journey as a metro map">
+        {#each segments as seg}
+          <path d={seg.d} stroke={seg.colour} class="track" />
+        {/each}
+        {#each segments.filter((s) => s.dur > 0) as seg}
+          {@const text = formatDuration(seg.dur)}
+          {@const w = text.length * 6.4 + 12}
+          <g class="dur" transform="translate({seg.mx},{seg.my})">
+            <rect x={-w / 2} y="-9" width={w} height="18" rx="9" stroke={seg.colour} />
+            <text y="4">{text}</text>
+          </g>
+        {/each}
+        {#each stops as stop}
+          <g class="stop" class:active={stop.i === selected} role="button" tabindex="0"
+             aria-label={STAGES[stop.i].name}
+             onclick={(e) => openCard(stop.i, e)}
+             onkeydown={(e) => (e.key === 'Enter' || e.key === ' ')
+               && openCard(stop.i, e as unknown as MouseEvent)}>
+            <title>{STAGES[stop.i].name}</title>
+            <circle cx={stop.x} cy={stop.y} r={stop.big ? 10 : 6}
+                    stroke-width={stop.big ? 3 : 2.5} />
+            <text x={stop.x + (stop.anchor === 'start' ? 14 : stop.anchor === 'end' ? -14 : 0)}
+                  y={stop.y + (stop.above ? -18 : 26)} text-anchor={stop.anchor}
+                  class:big={stop.big}>{stop.label}</text>
+          </g>
+        {/each}
+      </svg>
+    </div>
+    {:else}
     <div id="jrail">
       <div class="swim">
         <div class="lanescol">
@@ -190,6 +344,7 @@
         </div>
       </div>
     </div>
+    {/if}
 
       {#if stage && selected != null}
       <div class="jdetail popcard" role="dialog" aria-label={stage.name} bind:this={card}
@@ -239,6 +394,23 @@
 </section>
 
 <style>
+  .viewtabs { display: flex; gap: 4px; margin: 10px 0 2px; }
+  .viewtabs button { border: 1px solid var(--border); background: #fff; font: inherit;
+                     font-size: 13px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+                     color: var(--ink); }
+  .viewtabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .metrowrap { background: #fff; border: 1px solid var(--border);
+               border-radius: 12px; }
+  .metrowrap svg { display: block; width: 100%; height: auto; }
+  .track { fill: none; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+  .dur rect { fill: #fff; stroke-width: 1.5; }
+  .dur text { font-size: 11px; font-weight: 600; fill: var(--muted); text-anchor: middle; }
+  .stop { cursor: pointer; outline: none; }
+  .stop circle { fill: #fff; stroke: #22303b; }
+  .stop text { font-size: 12px; font-weight: 600; fill: var(--ink); }
+  .stop text.big { font-size: 13px; font-weight: 800; }
+  .stop:hover text, .stop:focus-visible text, .stop.active text { text-decoration: underline; }
+  .stop.active circle, .stop:focus-visible circle { stroke: var(--accent); stroke-width: 4; }
   .wfbar { border: 0; font: inherit; }
   .pin { position: absolute; border: 0; padding: 0; background: none; cursor: pointer;
          font: inherit; z-index: 1; }
@@ -261,8 +433,6 @@
   .jbody { align-items: start; margin-top: 0; }
   .jmain { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
   .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-  .lede { margin: 6px 0 12px; max-width: 900px; font-size: 13px; line-height: 1.55;
-          color: var(--muted); }
   .kv { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0;
         border-bottom: 1px dashed var(--border); font-size: 13px; }
   .kv .k { color: var(--muted); }
